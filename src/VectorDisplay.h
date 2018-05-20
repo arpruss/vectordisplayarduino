@@ -8,9 +8,12 @@
 #define ALIGN_LEFT 'l'
 #define ALIGN_RIGHT 'r'
 #define ALIGN_CENTER 'c'
+#define ALIGN_TOP 't'
+#define ALIGN_BOTTOM 'b'
+#define ALIGN_BASELINE 'l'
 
 template <class MyWriter>
-class VectorDisplay {    
+class VectorDisplay {
 private:
     union {
         uint32_t color;
@@ -26,14 +29,19 @@ private:
             uint8_t fit;
         } __attribute__((packed)) coords;
         struct {
-            char align;
-            uint16_t size;
-        } __attribute__((packed)) style;
+            char attr;
+            uint8_t value;
+        } __attribute__((packed)) attribute8;
+        struct {
+            char attr;
+            uint16_t value;
+        } __attribute__((packed)) attribute16;
         char text[VECTOR_DISPLAY_MAX_STRING];
     } args;
     
     MyWriter writer;
 public:    
+
     VectorDisplay(MyWriter _writer) {
         writer = _writer;
     }
@@ -118,10 +126,28 @@ public:
         sendCommand('Z', &args, 5);
     }
     
-    void textStyle(char align, int size) {
-        args.style.align = align;
-        args.style.size = size;
-        sendCommand('S', &args, 3);
+    void textHorizontalAlign(char hAlign) {
+        args.attribute8.attr = 'h';
+        args.attribute8.value = hAlign;
+        sendCommand('Y', &args, 2);
+    }
+
+    void textVerticalAlign(char hAlign) {
+        args.attribute8.attr = 'v';
+        args.attribute8.value = hAlign;
+        sendCommand('Y', &args, 2);
+    }
+
+    void textOpaqueBackground(bool opaque) {
+        args.attribute8.attr = 'o';
+        args.attribute8.value = opaque ? 1 : 0;
+        sendCommand('Y', &args, 2);
+    }
+    
+    void textBold(bool bold) {
+        args.attribute8.attr = 'b';
+        args.attribute8.value = bold ? 1 : 0;
+        sendCommand('Y', &args, 2);
     }
 };
 
