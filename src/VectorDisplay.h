@@ -26,7 +26,6 @@ private:
         struct {
             uint16_t width;
             uint16_t height;
-            uint8_t fit;
         } __attribute__((packed)) coords;
         struct {
             char attr;
@@ -119,11 +118,10 @@ public:
         sendCommand('E', NULL, 0);
     }
 
-    void coordinates(int width, int height, bool fit) {
+    void coordinates(int width, int height) {
         args.coords.width = width;
         args.coords.height = height;
-        args.coords.fit = fit;
-        sendCommand('Z', &args, 5);
+        sendCommand('Z', &args, 4);
     }
     
     void textHorizontalAlign(char hAlign) {
