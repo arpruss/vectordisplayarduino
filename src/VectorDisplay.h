@@ -35,6 +35,14 @@ private:
             char attr;
             uint16_t value;
         } __attribute__((packed)) attribute16;
+        struct {
+            char attr;
+            uint32_t value;
+        } __attribute__((packed)) attribute32;
+        struct {
+            char attr;
+            uint16_t values[2];
+        } __attribute__((packed)) attribute16x2;
         char text[VECTOR_DISPLAY_MAX_STRING];
     } args;
     
@@ -93,7 +101,7 @@ public:
     void message(const char* str) {
         strncpy(args.text, str, VECTOR_DISPLAY_MAX_STRING);
         args.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
-        sendCommand('T', &args, 4+strlen(args.text)+1);
+        sendCommand('M', &args, strlen(args.text)+1);
     }
     
     void message(String text) {
@@ -101,13 +109,15 @@ public:
     }
     
     void foreColor(uint32_t color) {
-        args.color = color;
-        sendCommand('F', &args, 4);
+        args.attribute32.attr = 'f';
+        args.attribute32.value = color;
+        sendCommand('B', &args, 5);
     }
 
     void backColor(uint32_t color) {
-        args.color = color;
-        sendCommand('B', &args, 4);
+        args.attribute32.attr = 'b';
+        args.attribute32.value = color;
+        sendCommand('B', &args, 5);
     }
 
     void clear() {
@@ -119,9 +129,10 @@ public:
     }
 
     void coordinates(int width, int height) {
-        args.coords.width = width;
-        args.coords.height = height;
-        sendCommand('Z', &args, 4);
+        args.attribute16x2.attr = 'f';
+        args.attribute16x2.values[0] = width;
+        args.attribute16x2.values[1] = height;
+        sendCommand('B', &args, 5);
     }
     
     void textHorizontalAlign(char hAlign) {
