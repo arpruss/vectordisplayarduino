@@ -12,8 +12,9 @@
 #define ALIGN_BOTTOM 'b'
 #define ALIGN_BASELINE 'l'
 
-template <class MyWriter>
-class VectorDisplay {
+#define SEND_DELAY 3
+
+class SerialDisplayClass {
 private:
     union {
         uint32_t color;
@@ -45,23 +46,19 @@ private:
         } __attribute__((packed)) attribute16x2;
         char text[VECTOR_DISPLAY_MAX_STRING];
     } args;
-    
-    MyWriter writer;
+    uint32_t lastSend = 0;
 public:    
-
-    VectorDisplay(MyWriter _writer) {
-        writer = _writer;
-    }
-
     void sendCommand(char c, const void* arguments, int argumentsLength) {
-        writer.write(c);
-        writer.write(c^0xFF);
+        while(millis()-lastSend < SEND_DELAY) ;
+        lastSend = millis();
+        Serial.write(c);
+        Serial.write(c^0xFF);
         if (argumentsLength > 0) 
-            writer.write((uint8_t*)arguments, argumentsLength);
+            Serial.write((uint8_t*)arguments, argumentsLength);
         uint8_t sum = 0;
         for (int i = 0; i<argumentsLength; i++)
         sum += ((uint8_t*)arguments)[i];
-        writer.write(sum^0xFF);
+        Serial.write(sum^0xFF);
     }
 
     void line(int x1, int y1, int x2, int y2) {
@@ -160,6 +157,6 @@ public:
     }
 };
 
-//extern VectorDisplay<decltype(Serial)> SerialDisplay;
+extern SerialDisplayClass SerialDisplay;
 
 #endif
