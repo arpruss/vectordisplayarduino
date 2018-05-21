@@ -119,6 +119,24 @@ public:
         sendCommand('B', &args, 5);
     }
 
+    void textBackColor(uint32_t color) {
+        args.attribute32.attr = 'k';
+        args.attribute32.value = color;
+        sendCommand('B', &args, 5);
+    }
+    
+    void setThickness(uint32_t thickness) {
+        args.attribute32.attr = 't';
+        args.attribute32.value = thickness;
+        sendCommand('B', &args, 5);
+    }
+
+#ifdef SUPPORT_FLOATING_POINT
+    void setThickness(double thickness) {
+        setThickness((uint32_t)(thickness * 65536+0.5));
+    } 
+#endif    
+
     void clear() {
         sendCommand('C', NULL, 0);
     }
