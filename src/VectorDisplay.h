@@ -12,7 +12,9 @@
 #define ALIGN_BOTTOM 'b'
 #define ALIGN_BASELINE 'l'
 
-#define SEND_DELAY 3
+#ifndef SERIAL_DISPLAY_SEND_DELAY
+#define SERIAL_DISPLAY_SEND_DELAY 0
+#endif
 
 class SerialDisplayClass {
 private:
@@ -49,7 +51,7 @@ private:
     uint32_t lastSend = 0;
 public:    
     void sendCommand(char c, const void* arguments, int argumentsLength) {
-        while(millis()-lastSend < SEND_DELAY) ;
+        while(millis()-lastSend < SERIAL_DISPLAY_SEND_DELAY) ;
         lastSend = millis();
         Serial.write(c);
         Serial.write(c^0xFF);
