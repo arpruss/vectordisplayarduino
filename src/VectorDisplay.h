@@ -16,8 +16,14 @@
 #define SERIAL_DISPLAY_SEND_DELAY 0
 #endif
 
-class SerialDisplayClass {
+typedef uint32_t FixedPoint32;
+
+class SerialDisplayClass : Public Print {
 private:
+    int gfxFontSize = 1;
+    int curx;
+    int cury;
+    int32_t curForeColor565 = -1;
     union {
         uint32_t color;
         uint16_t twoByte[4];
@@ -71,7 +77,7 @@ public:
         sendCommand('L', &args, 8);
     }
     
-    void rectangle(int x1, int y1, int x2, int y2) {
+    void fillRectangle(int x1, int y1, int x2, int y2) {
         args.twoByte[0] = x1;
         args.twoByte[1] = y1;
         args.twoByte[2] = x2;
@@ -79,10 +85,30 @@ public:
         sendCommand('R', &args, 8);
     }
     
+    void fillCircle(int x, int y, int r) {
+        args.twoByte[0] = x;
+        args.twoByte[1] = y;
+        args.twoByte[2] = r;
+        sendCommand('J', &args, 6);
+    }
+    
+    void circle(int x, int y, int r) {
+        args.twoByte[0] = x;
+        args.twoByte[1] = y;
+        args.twoByte[2] = r;
+        sendCommand('I', &args, 6);
+    }
+    
     void point(int x, int y) {
         args.twoByte[0] = x;
         args.twoByte[1] = y;
         sendCommand('P', &args, 2);
+    }
+    
+    // 32-bit fixed point
+    void textSize(FixedPoint32 s) {
+        args.attribute32.attr = 's';
+        args.attribute32.value = s;
     }
     
     void text(int x, int y, const char* str) {
@@ -111,6 +137,7 @@ public:
         args.attribute32.attr = 'f';
         args.attribute32.value = color;
         sendCommand('B', &args, 5);
+        curForeColor565 = -1;
     }
 
     void backColor(uint32_t color) {
@@ -129,6 +156,7 @@ public:
         args.attribute16.attr = 'f';
         args.attribute16.value = color;
         sendCommand('A', &args, 3);
+        curForeColor565 = color;
     }
 
     void backColor565(uint16_t color) {
@@ -143,7 +171,7 @@ public:
         sendCommand('A', &args, 3);
     }
     
-    void setThickness(uint32_t thickness) {
+    void setThickness(FixedPoint32 thickness) {
         args.attribute32.attr = 't';
         args.attribute32.value = thickness;
         sendCommand('B', &args, 5);
@@ -192,6 +220,98 @@ public:
         args.attribute8.attr = 'b';
         args.attribute8.value = bold ? 1 : 0;
         sendCommand('Y', &args, 2);
+    }
+
+    /* Roughly compatible with Adafruit GFX */
+    void setRotation(uint8_t r) {
+        args.attribute8.attr = 'r';
+        args.attribute8.value = r;
+        sendCommand('Y', &args, 2);
+    }
+    
+    void setTextSize(uint8_t size) {
+        gfxFontSize = size;
+        textSize((FixedPoint32)size * 65536);
+    }
+    
+    void setCursor(int16_t x, int16_t y) {
+        curx = x;
+        cury = y;
+    }
+    
+    virtual size_t write(uint8_t c) {
+        char s[2];
+        s[0] = c;
+        s[1] = 0;
+        text(curx, cury, c);
+        curx += 5*gfxFontSize;
+    }
+
+    virtual size_t write(const char* s) {
+        text(curx, cury, s);
+        curx += 5*gfxFontSize*strlen(s);
+    }
+    
+    void drawPixel(int16_t x, int16_t y, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        point(x, y);
+    }
+
+    void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        line(x,y,x+w-1,y);
+        line(x+w-1,y,x+w-1,y+h-1);
+        line(x+w-1,y+h-1,x,y+h-1);
+        line(x,y+h-1,x,y);
+    }
+
+    void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        filledRectangle(x,y,x+w-1,y+h-1);
+    }
+    
+    void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        line(x,y,x+w,y);
+    }
+    
+    void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        line(x,y,x,y+h);
+    }
+    
+    void fillScreen(uint16_t color) {
+        backColor565(color);
+        clear();
+        backColor(0xFF000000);
+    }
+    
+    void drawCircle(int16_t x, int16_t y, int16_t r, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        circle(x,y,r);
+    }
+
+    void fillCircle(int16_t x, int16_t y, int16_t r, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        fillCircle(x,y,r);
+    }
+    
+    void begin() {
+        reset();
     }
 };
 
