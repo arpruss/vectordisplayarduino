@@ -125,6 +125,24 @@ public:
         sendCommand('B', &args, 5);
     }
     
+    void foreColor565(uint16_t color) {
+        args.attribute16.attr = 'f';
+        args.attribute16.value = color;
+        sendCommand('A', &args, 3);
+    }
+
+    void backColor565(uint16_t color) {
+        args.attribute16.attr = 'b';
+        args.attribute16.value = color;
+        sendCommand('A', &args, 3);
+    }
+
+    void textBackColor565(uint16_t color) {
+        args.attribute16.attr = 'k';
+        args.attribute16.value = color;
+        sendCommand('A', &args, 3);
+    }
+    
     void setThickness(uint32_t thickness) {
         args.attribute32.attr = 't';
         args.attribute32.value = thickness;
