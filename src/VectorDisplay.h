@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+#define VECTOR_DISPLAY_MESSAGE_SIZE 8
 #define VECTOR_DISPLAY_MAX_STRING 256
 
 #define ALIGN_LEFT 'l'
@@ -16,14 +17,35 @@
 #define SERIAL_DISPLAY_SEND_DELAY 0
 #endif
 
+#define MESSAGE_DOWN   'D'
+#define MESSAGE_UP     'U'
+#define MESSAGE_MOVE   'M'
+#define MESSAGE_BUTTON 'B'
+#define MESSAGE_ACK    'A'
+
 typedef uint32_t FixedPoint32;
 
-class SerialDisplayClass : Public Print {
+struct VectorDisplayMessage {
+    char what;
+    char what2;
+    union {
+        uint8_t button;
+        struct {
+            int16_t x;
+            int16_t y;
+        } xy;
+    } data;
+};
+
+class SerialDisplayClass : public Print {
 private:
+    const uint32_t MESSAGE_TIMEOUT = 2000;
     int gfxFontSize = 1;
     int curx;
     int cury;
+    int readPos;
     int32_t curForeColor565 = -1;
+    uint32_t lastMessageStart = 0;
     union {
         uint32_t color;
         uint16_t twoByte[4];
@@ -32,6 +54,10 @@ private:
             uint16_t y;
             char text[VECTOR_DISPLAY_MAX_STRING];
         } __attribute__((packed)) xyText;
+        struct {
+            uint8_t c;
+            char text[VECTOR_DISPLAY_MAX_STRING];
+        } __attribute__((packed)) charText;
         struct {
             uint16_t width;
             uint16_t height;
@@ -57,8 +83,10 @@ private:
     uint32_t lastSend = 0;
 public:    
     void sendCommand(char c, const void* arguments, int argumentsLength) {
+#if SERIAL_DISPLAY_SEND_DELAY>0
         while(millis()-lastSend < SERIAL_DISPLAY_SEND_DELAY) ;
         lastSend = millis();
+#endif        
         Serial.write(c);
         Serial.write(c^0xFF);
         if (argumentsLength > 0) 
@@ -119,6 +147,21 @@ public:
         sendCommand('T', &args, 4+strlen(args.xyText.text)+1);
     }
     
+    void deleteButton(byte command) {
+        sendCommand('D', &command, 1);
+    }
+
+    void addButton(uint8_t command, const char* str) {
+        args.charText.c = command;
+        strncpy(args.charText.text, str, VECTOR_DISPLAY_MAX_STRING);
+        args.charText.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
+        sendCommand('U', &args, 1+strlen(args.charText.text)+1);
+    }
+
+    void addButton(uint8_t command, String str) {
+        addButton(command, str.c_str());
+    }
+
     void text(int x, int y, String str) {
         text(x,y,str.c_str());
     }
@@ -187,8 +230,28 @@ public:
         sendCommand('C', NULL, 0);
     }
 
+    void ack() {
+        sendCommand('K', NULL, 0);
+    }
+
     void reset() {
-        sendCommand('E', NULL, 0);
+        readPos = 0;
+            
+        bool done = false;
+        do {
+            char msg[8];
+            uint32_t t0 = millis();
+            
+            sendCommand('E', NULL, 0);
+            
+            while ((millis()-t0) < 500) {
+                if (readMessage((VectorDisplayMessage*)msg) && !strncmp(msg, "Acknwldg", 8)) {
+                    done = true;
+                    break;
+                }
+            }
+            
+        } while(!done);        
     }
 
     void coordinates(int width, int height) {
@@ -221,7 +284,7 @@ public:
         args.attribute8.value = bold ? 1 : 0;
         sendCommand('Y', &args, 2);
     }
-
+    
     /* Roughly compatible with Adafruit GFX */
     void setRotation(uint8_t r) {
         args.attribute8.attr = 'r';
@@ -243,13 +306,16 @@ public:
         char s[2];
         s[0] = c;
         s[1] = 0;
-        text(curx, cury, c);
+        text(curx, cury, s);
         curx += 5*gfxFontSize;
+        return 1;
     }
 
     virtual size_t write(const char* s) {
+        size_t l = strlen(s);
         text(curx, cury, s);
-        curx += 5*gfxFontSize*strlen(s);
+        curx += 5*gfxFontSize*l;
+        return l;
     }
     
     void drawPixel(int16_t x, int16_t y, uint16_t color) {
@@ -273,7 +339,7 @@ public:
         if (color != curForeColor565) {
             foreColor565(color);
         }
-        filledRectangle(x,y,x+w-1,y+h-1);
+        fillRectangle(x,y,x+w-1,y+h-1);
     }
     
     void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
@@ -312,6 +378,41 @@ public:
     
     void begin() {
         reset();
+    }
+    
+    bool readMessage(VectorDisplayMessage* msg) {
+        uint8_t* readBuf = (uint8_t*) msg;
+        if (Serial.available()) {
+            if (0 < readPos && millis()-lastMessageStart > MESSAGE_TIMEOUT)
+                readPos = 0;
+
+            uint8_t c = Serial.read();
+            if (2 <= readPos) {
+                readBuf[readPos++] = c;
+                if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
+                    readPos = 0;
+                    return true;
+                }
+                return false;
+            }
+            if (1 <= readPos) {
+                if ( (*readBuf == 'U' && c == 'P') ||
+                     (*readBuf == 'D' && c == 'N') ||
+                     (*readBuf == 'M' && c == 'V') ||
+                     (*readBuf == 'B' && c == 'T') ||
+                     (*readBuf == 'A' && c == 'K') 
+                     ) {
+                    readBuf[readPos++] = c;
+                    return false;
+                }
+                readPos = 0;
+            }
+            if (c == 'U' || c == 'D' || c == 'M' || c == 'B' || c == 'A') {
+                readBuf[readPos++] = c;
+                lastMessageStart = millis();
+            }
+        }
+        return false;
     }
 };
 
