@@ -46,6 +46,10 @@ private:
     int readPos;
     int32_t curForeColor565 = -1;
     uint32_t lastMessageStart = 0;
+    uint16_t curTextColor565 = 0xFFFF;
+    int pointerX;
+    int pointerY;
+    bool pointerDown;
     union {
         uint32_t color;
         uint16_t twoByte[4];
@@ -214,9 +218,9 @@ public:
         sendCommand('A', &args, 3);
     }
     
-    void setThickness(FixedPoint32 thickness) {
+    void thickness(FixedPoint32 t) {
         args.attribute32.attr = 't';
-        args.attribute32.value = thickness;
+        args.attribute32.value = t;
         sendCommand('B', &args, 5);
     }
 
@@ -255,7 +259,7 @@ public:
     }
 
     void coordinates(int width, int height) {
-        args.attribute16x2.attr = 'f';
+        args.attribute16x2.attr = 'c';
         args.attribute16x2.values[0] = width;
         args.attribute16x2.values[1] = height;
         sendCommand('B', &args, 5);
@@ -297,6 +301,11 @@ public:
         textSize((FixedPoint32)size * 65536);
     }
     
+    void setTextColor(uint16_t f, uint16_t b) {
+        curTextColor565 = f;
+        textBackColor565(b);
+    }
+    
     void setCursor(int16_t x, int16_t y) {
         curx = x;
         cury = y;
@@ -306,12 +315,18 @@ public:
         char s[2];
         s[0] = c;
         s[1] = 0;
+        if (curTextColor565 != curForeColor565) {
+            foreColor565(curTextColor565);
+        }
         text(curx, cury, s);
         curx += 5*gfxFontSize;
         return 1;
     }
 
     virtual size_t write(const char* s) {
+        if (curTextColor565 != curForeColor565) {
+            foreColor565(curTextColor565);
+        }
         size_t l = strlen(s);
         text(curx, cury, s);
         curx += 5*gfxFontSize*l;
@@ -349,6 +364,13 @@ public:
         line(x,y,x+w,y);
     }
     
+    void drawLine(int16_t x, int16_t y, int16_t x2, int16_t y2, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        line(x,y,x2,y2);
+    }
+    
     void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) {
         if (color != curForeColor565) {
             foreColor565(color);
@@ -377,7 +399,20 @@ public:
     }
     
     void begin() {
+        while (! Serial) ;
         reset();
+    }
+    
+    bool isTouchDown() {
+        return pointerDown;
+    }
+    
+    int getTouchX() {
+        return pointerX;
+    }
+    
+    int getTouchY() {
+        return pointerY;
     }
     
     bool readMessage(VectorDisplayMessage* msg) {
@@ -391,6 +426,13 @@ public:
                 readBuf[readPos++] = c;
                 if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
                     readPos = 0;
+                    
+                    if (msg->what == MESSAGE_DOWN || msg->what == MESSAGE_UP || msg->what == MESSAGE_MOVE) {
+                        pointerDown = msg->what != MESSAGE_UP;
+                        pointerX = msg->data.xy.x;
+                        pointerY = msg->data.xy.y;
+                    }
+                    
                     return true;
                 }
                 return false;
@@ -400,7 +442,7 @@ public:
                      (*readBuf == 'D' && c == 'N') ||
                      (*readBuf == 'M' && c == 'V') ||
                      (*readBuf == 'B' && c == 'T') ||
-                     (*readBuf == 'A' && c == 'K') 
+                     (*readBuf == 'A' && c == 'c') 
                      ) {
                     readBuf[readPos++] = c;
                     return false;
