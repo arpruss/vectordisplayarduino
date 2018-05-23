@@ -2,6 +2,8 @@
 #define _VECTOR_DISPLAY_H
 
 #include <Arduino.h>
+#include <USBCompositeSerial.h>
+#define Serial CompositeSerial
 
 #define VECTOR_DISPLAY_MESSAGE_SIZE 8
 #define VECTOR_DISPLAY_MAX_STRING 256
@@ -39,7 +41,7 @@ struct VectorDisplayMessage {
 
 class SerialDisplayClass : public Print {
 private:
-    const uint32_t MESSAGE_TIMEOUT = 2000;
+    const uint32_t MESSAGE_TIMEOUT = 3000;
     int gfxFontSize = 1;
     int curx;
     int cury;
@@ -50,6 +52,10 @@ private:
     int pointerX;
     int pointerY;
     bool pointerDown;
+    uint16_t polyLineCount;
+    uint8_t polyLineSum;
+    
+    uint8_t readBuf[VECTOR_DISPLAY_MESSAGE_SIZE];
     union {
         uint32_t color;
         uint16_t twoByte[4];
@@ -81,7 +87,8 @@ private:
         struct {
             char attr;
             uint16_t values[2];
-        } __attribute__((packed)) attribute16x2;
+        } __attribute__((packed)) attribute16x2;        
+        uint8_t bytes[VECTOR_DISPLAY_MAX_STRING];
         char text[VECTOR_DISPLAY_MAX_STRING];
     } args;
     uint32_t lastSend = 0;
@@ -97,8 +104,30 @@ public:
             Serial.write((uint8_t*)arguments, argumentsLength);
         uint8_t sum = 0;
         for (int i = 0; i<argumentsLength; i++)
-        sum += ((uint8_t*)arguments)[i];
+            sum += ((uint8_t*)arguments)[i];
         Serial.write(sum^0xFF);
+    }
+    
+    void startPolyLine(uint16_t n) {
+        polyLineCount = n;
+        Serial.write('O');
+        Serial.write('O'^0xFF);
+        args.twoByte[0] = n;
+        Serial.write((uint8_t*)&args, 2);
+        polyLineSum = args.bytes[0] + args.bytes[1];
+    }
+
+    void addPolyLine(int16_t x, int16_t y) {
+        if (polyLineCount>0) {
+            args.twoByte[0] = x;
+            args.twoByte[1] = y;
+            Serial.write((uint8_t*)&args, 4);
+            polyLineSum += args.bytes[0] + args.bytes[1] + args.bytes[2] + args.bytes[3];
+            polyLineCount--;
+            if (polyLineCount == 0) {
+                Serial.write(0xFF^polyLineSum);
+            }
+        }
     }
 
     void line(int x1, int y1, int x2, int y2) {
@@ -143,12 +172,22 @@ public:
         args.attribute32.value = s;
     }
     
-    void text(int x, int y, const char* str) {
+    void text(int x, int y, const char* str, int n) {
         args.xyText.x = x;
         args.xyText.y = y;
-        strncpy(args.xyText.text, str, VECTOR_DISPLAY_MAX_STRING);
-        args.xyText.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
+        if (n>VECTOR_DISPLAY_MAX_STRING-1)
+            n = VECTOR_DISPLAY_MAX_STRING-1;
+        strncpy(args.xyText.text, str, n);
+        args.xyText.text[n] = 0;
         sendCommand('T', &args, 4+strlen(args.xyText.text)+1);
+    }
+    
+    void text(int x, int y, const char* str) {
+        text(x, y, str, strlen(str));
+    }
+    
+    void text(int x, int y, String str) {
+        text(x,y,str.c_str(), str.length());
     }
     
     void deleteButton(byte command) {
@@ -166,10 +205,6 @@ public:
         addButton(command, str.c_str());
     }
 
-    void text(int x, int y, String str) {
-        text(x,y,str.c_str());
-    }
-    
     void message(const char* str) {
         strncpy(args.text, str, VECTOR_DISPLAY_MAX_STRING);
         args.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
@@ -243,13 +278,12 @@ public:
             
         bool done = false;
         do {
-            char msg[8];
             uint32_t t0 = millis();
             
             sendCommand('E', NULL, 0);
             
             while ((millis()-t0) < 500) {
-                if (readMessage((VectorDisplayMessage*)msg) && !strncmp(msg, "Acknwldg", 8)) {
+                if (readMessage(NULL) && !memcmp(readBuf, "Acknwldg", 8)) {
                     done = true;
                     break;
                 }
@@ -399,6 +433,7 @@ public:
     }
     
     void begin() {
+        Serial.begin(115200);
         while (! Serial) ;
         reset();
     }
@@ -416,17 +451,22 @@ public:
     }
     
     bool readMessage(VectorDisplayMessage* msg) {
-        uint8_t* readBuf = (uint8_t*) msg;
-        if (Serial.available()) {
+        while (Serial.available()) {
+            uint8_t c = Serial.read();
+
             if (0 < readPos && millis()-lastMessageStart > MESSAGE_TIMEOUT)
                 readPos = 0;
 
-            uint8_t c = Serial.read();
             if (2 <= readPos) {
                 readBuf[readPos++] = c;
                 if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
                     readPos = 0;
                     
+                    if (msg != NULL) 
+                        memcpy(msg, readBuf, VECTOR_DISPLAY_MESSAGE_SIZE);
+                    else
+                        msg = (VectorDisplayMessage*)readBuf;
+                                        
                     if (msg->what == MESSAGE_DOWN || msg->what == MESSAGE_UP || msg->what == MESSAGE_MOVE) {
                         pointerDown = msg->what != MESSAGE_UP;
                         pointerX = msg->data.xy.x;
@@ -435,8 +475,9 @@ public:
                     
                     return true;
                 }
-                return false;
+                continue;
             }
+            
             if (1 <= readPos) {
                 if ( (*readBuf == 'U' && c == 'P') ||
                      (*readBuf == 'D' && c == 'N') ||
@@ -445,11 +486,11 @@ public:
                      (*readBuf == 'A' && c == 'c') 
                      ) {
                     readBuf[readPos++] = c;
-                    return false;
+                    continue;
                 }
                 readPos = 0;
             }
-            if (c == 'U' || c == 'D' || c == 'M' || c == 'B' || c == 'A') {
+            if (readPos == 0 && (c == 'U' || c == 'D' || c == 'M' || c == 'B' || c == 'A')) {
                 readBuf[readPos++] = c;
                 lastMessageStart = millis();
             }
