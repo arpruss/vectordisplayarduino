@@ -163,7 +163,7 @@ public:
     void point(int x, int y) {
         args.twoByte[0] = x;
         args.twoByte[1] = y;
-        sendCommand('P', &args, 2);
+        sendCommand('P', &args, 4);
     }
     
     // 32-bit fixed point
@@ -259,9 +259,19 @@ public:
         sendCommand('B', &args, 5);
     }
 
+    void pixelAspectRatio(FixedPoint32 a) {
+        args.attribute32.attr = 'a';
+        args.attribute32.value = a;
+        sendCommand('B', &args, 5);
+    }
+
 #ifdef SUPPORT_FLOATING_POINT
-    void setThickness(double thickness) {
+    inline void setThickness(double thickness) {
         setThickness((uint32_t)(thickness * 65536+0.5));
+    } 
+
+    inline void setPixelAspectRatio(double aspect) {
+        setThickness((uint32_t)(aspect * 65536+0.5));
     } 
 #endif    
 
