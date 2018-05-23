@@ -279,6 +279,10 @@ public:
         sendCommand('C', NULL, 0);
     }
 
+    void update() {
+        sendCommand('F', NULL, 0);
+    }
+
     void ack() {
         sendCommand('K', NULL, 0);
     }
@@ -307,6 +311,12 @@ public:
         args.attribute16x2.values[0] = width;
         args.attribute16x2.values[1] = height;
         sendCommand('B', &args, 5);
+    }
+    
+    void continuousUpdate(bool value) {
+        args.attribute8.attr = 'c';
+        args.attribute8.value = value ? 1 : 0;
+        sendCommand('Y', &args, 2);
     }
     
     void textHorizontalAlign(char hAlign) {
