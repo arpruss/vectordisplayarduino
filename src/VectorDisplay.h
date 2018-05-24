@@ -35,7 +35,7 @@ struct VectorDisplayMessage {
             int16_t y;
         } xy;
     } data;
-};
+} __attribute__((packed));
 
 class SerialDisplayClass : public Print {
 private:
@@ -106,7 +106,7 @@ public:
         uint8_t sum = 0;
         for (int i = 0; i<argumentsLength; i++)
             sum += ((uint8_t*)arguments)[i];
-        Serial.write(sum^0xFF);
+        Serial.write((uint8_t)(sum^0xFF));
     }
     
     uint16_t width() {
@@ -497,9 +497,8 @@ public:
                 readBuf[readPos++] = c;
                 if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
                     readPos = 0;
-                    
                     if (msg != NULL) 
-                        memcpy(msg, readBuf, VECTOR_DISPLAY_MESSAGE_SIZE);
+                        memcpy(msg, readBuf, sizeof(VectorDisplayMessage));
                     else
                         msg = (VectorDisplayMessage*)readBuf;
                                         
@@ -508,7 +507,6 @@ public:
                         pointerX = msg->data.xy.x;
                         pointerY = msg->data.xy.y;
                     }
-                    
                     return true;
                 }
                 continue;
