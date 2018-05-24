@@ -469,10 +469,8 @@ public:
     }
     
     void begin() {
-        digitalWrite(PB12,0);
         Serial.begin(115200);
         while (! Serial) ;
-        digitalWrite(PB12,1);
         reset();
     }
     
