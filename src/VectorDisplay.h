@@ -2,9 +2,6 @@
 #define _VECTOR_DISPLAY_H
 
 #include <Arduino.h>
-#include <USBCompositeSerial.h>
-#define Serial CompositeSerial
-
 #define VECTOR_DISPLAY_MESSAGE_SIZE 8
 #define VECTOR_DISPLAY_MAX_STRING 256
 
@@ -26,6 +23,7 @@
 #define MESSAGE_ACK    'A'
 
 typedef uint32_t FixedPoint32;
+#define TO_FP32(f) ((uint32_t)((f)*65536. + 0.5))
 
 struct VectorDisplayMessage {
     char what;
@@ -51,6 +49,9 @@ private:
     uint16_t curTextColor565 = 0xFFFF;
     int pointerX;
     int pointerY;
+    int curWidth = 240;
+    int curHeight = 320;
+    uint8_t curRotation = 0;
     bool pointerDown;
     uint16_t polyLineCount;
     uint8_t polyLineSum;
@@ -62,11 +63,11 @@ private:
         struct {
             uint16_t x;
             uint16_t y;
-            char text[VECTOR_DISPLAY_MAX_STRING];
+            char text[VECTOR_DISPLAY_MAX_STRING+1];
         } __attribute__((packed)) xyText;
         struct {
             uint8_t c;
-            char text[VECTOR_DISPLAY_MAX_STRING];
+            char text[VECTOR_DISPLAY_MAX_STRING+1];
         } __attribute__((packed)) charText;
         struct {
             uint16_t width;
@@ -88,8 +89,8 @@ private:
             char attr;
             uint16_t values[2];
         } __attribute__((packed)) attribute16x2;        
-        uint8_t bytes[VECTOR_DISPLAY_MAX_STRING];
-        char text[VECTOR_DISPLAY_MAX_STRING];
+        uint8_t bytes[VECTOR_DISPLAY_MAX_STRING+1];
+        char text[VECTOR_DISPLAY_MAX_STRING+1];
     } args;
     uint32_t lastSend = 0;
 public:    
@@ -106,6 +107,14 @@ public:
         for (int i = 0; i<argumentsLength; i++)
             sum += ((uint8_t*)arguments)[i];
         Serial.write(sum^0xFF);
+    }
+    
+    uint16_t width() {
+        return (curRotation%2)?curHeight:curWidth;
+    }
+    
+    uint16_t height() {
+        return (curRotation%2)?curWidth:curHeight;
     }
     
     void startPolyLine(uint16_t n) {
@@ -170,13 +179,14 @@ public:
     void textSize(FixedPoint32 s) {
         args.attribute32.attr = 's';
         args.attribute32.value = s;
+        sendCommand('B', &args, 5);
     }
     
     void text(int x, int y, const char* str, int n) {
         args.xyText.x = x;
         args.xyText.y = y;
-        if (n>VECTOR_DISPLAY_MAX_STRING-1)
-            n = VECTOR_DISPLAY_MAX_STRING-1;
+        if (n>VECTOR_DISPLAY_MAX_STRING)
+            n = VECTOR_DISPLAY_MAX_STRING;
         strncpy(args.xyText.text, str, n);
         args.xyText.text[n] = 0;
         sendCommand('T', &args, 4+strlen(args.xyText.text)+1);
@@ -197,7 +207,7 @@ public:
     void addButton(uint8_t command, const char* str) {
         args.charText.c = command;
         strncpy(args.charText.text, str, VECTOR_DISPLAY_MAX_STRING);
-        args.charText.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
+        args.charText.text[VECTOR_DISPLAY_MAX_STRING] = 0;
         sendCommand('U', &args, 1+strlen(args.charText.text)+1);
     }
 
@@ -205,14 +215,20 @@ public:
         addButton(command, str.c_str());
     }
 
-    void message(const char* str) {
-        strncpy(args.text, str, VECTOR_DISPLAY_MAX_STRING);
-        args.text[VECTOR_DISPLAY_MAX_STRING-1] = 0;
-        sendCommand('M', &args, strlen(args.text)+1);
+    void toast(const char* str, unsigned n) {
+        if (VECTOR_DISPLAY_MAX_STRING < n)
+            n = VECTOR_DISPLAY_MAX_STRING;
+        strncpy(args.text, str, n);
+        args.text[n] = 0;
+        sendCommand('M', &args, n+1);
     }
     
-    void message(String text) {
-        message(text.c_str());
+    void toast(const char* str) {
+        toast(str, strlen(str));
+    }
+    
+    void toast(String text) {
+        toast(text.c_str(), text.length());
     }
     
     void foreColor(uint32_t color) {
@@ -267,11 +283,11 @@ public:
 
 #ifdef SUPPORT_FLOATING_POINT
     inline void setThickness(double thickness) {
-        setThickness((uint32_t)(thickness * 65536+0.5));
+        setThickness(TO_FP32(thickness));
     } 
 
     inline void setPixelAspectRatio(double aspect) {
-        setThickness((uint32_t)(aspect * 65536+0.5));
+        setThickness(TO_FP32(aspect));
     } 
 #endif    
 
@@ -308,6 +324,8 @@ public:
 
     void coordinates(int width, int height) {
         args.attribute16x2.attr = 'c';
+        curWidth = width;
+        curHeight = height;
         args.attribute16x2.values[0] = width;
         args.attribute16x2.values[1] = height;
         sendCommand('B', &args, 5);
@@ -347,12 +365,13 @@ public:
     void setRotation(uint8_t r) {
         args.attribute8.attr = 'r';
         args.attribute8.value = r;
+        curRotation = r & 3;
         sendCommand('Y', &args, 2);
     }
     
     void setTextSize(uint8_t size) {
         gfxFontSize = size;
-        textSize((FixedPoint32)size * 65536);
+        textSize((FixedPoint32)size * 8 * 65536);
     }
     
     void setTextColor(uint16_t f, uint16_t b) {
@@ -366,15 +385,12 @@ public:
     }
     
     virtual size_t write(uint8_t c) {
-        char s[2];
-        s[0] = c;
-        s[1] = 0;
         if (curTextColor565 != curForeColor565) {
             foreColor565(curTextColor565);
         }
-        text(curx, cury, s);
+        text(curx, cury, (char*)&c, 1);
         curx += 5*gfxFontSize;
-        return 1;
+        return 0;
     }
 
     virtual size_t write(const char* s) {
@@ -384,7 +400,7 @@ public:
         size_t l = strlen(s);
         text(curx, cury, s);
         curx += 5*gfxFontSize*l;
-        return l;
+        return 0;
     }
     
     void drawPixel(int16_t x, int16_t y, uint16_t color) {
@@ -453,8 +469,10 @@ public:
     }
     
     void begin() {
+        digitalWrite(PB12,0);
         Serial.begin(115200);
         while (! Serial) ;
+        digitalWrite(PB12,1);
         reset();
     }
     
