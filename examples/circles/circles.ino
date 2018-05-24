@@ -3,7 +3,6 @@
 VectorDisplayMessage msg;
 
 void setup() {
-  while(!Serial) ;
   SerialDisplay.begin();
   SerialDisplay.addButton('c', "Circle");
   SerialDisplay.addButton('o', "Color");
