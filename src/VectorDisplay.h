@@ -109,6 +109,25 @@ public:
         Serial.write((uint8_t)(sum^0xFF));
     }
     
+    
+    void sendCommandWithAck(char c, const void* arguments, int argumentsLength) {
+       readPos = 0;        
+       bool done = false;
+        do {
+            uint32_t t0 = millis();
+            
+            sendCommand(c, arguments, argumentsLength);
+            
+            while ((millis()-t0) < 500) {
+                if (readMessage(NULL) && !memcmp(readBuf, "Acknwldg", 8)) {
+                    done = true;
+                    break;
+                }
+            }
+            
+        } while(!done);        
+    }
+    
     uint16_t width() {
         return (curRotation%2)?curHeight:curWidth;
     }
@@ -153,6 +172,12 @@ public:
         args.twoByte[2] = x2;
         args.twoByte[3] = y2;
         sendCommand('R', &args, 8);
+    }
+    
+    void initialize() {
+        args.twoByte[0] = 0x1234; // endianness detector
+        args.twoByte[1] = 0;
+        sendCommand('H', &args, 4);
     }
     
     void fillCircle(int x, int y, int r) {
@@ -299,27 +324,8 @@ public:
         sendCommand('F', NULL, 0);
     }
 
-    void ack() {
-        sendCommand('K', NULL, 0);
-    }
-
     void reset() {
-        readPos = 0;
-            
-        bool done = false;
-        do {
-            uint32_t t0 = millis();
-            
-            sendCommand('E', NULL, 0);
-            
-            while ((millis()-t0) < 500) {
-                if (readMessage(NULL) && !memcmp(readBuf, "Acknwldg", 8)) {
-                    done = true;
-                    break;
-                }
-            }
-            
-        } while(!done);        
+        sendCommandWithAck('E', NULL, 0);
     }
 
     void coordinates(int width, int height) {
@@ -471,6 +477,7 @@ public:
     void begin() {
         Serial.begin(115200);
         while (! Serial) ;
+        Serial.flush();
         reset();
     }
     
