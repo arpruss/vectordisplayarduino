@@ -6,18 +6,16 @@
 # Datatypes (KEYWORD1)
 #######################################
 
-GameController	KEYWORD1
-GameCubeController	KEYWORD1
-NunchuckController	KEYWORD1
-GamePortController	KEYWORD1
+VectorDisplayClass	KEYWORD1
+SerialDisplayClass	KEYWORD1
+WiFiDisplayClass	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
 
-read	KEYWORD2
-readWithRumble	KEYWORD2
 begin	KEYWORD2
+end	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)
