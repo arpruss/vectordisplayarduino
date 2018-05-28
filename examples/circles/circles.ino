@@ -1,20 +1,21 @@
 #include <VectorDisplay.h>
 
+SerialDisplayClass Display;
 VectorDisplayMessage msg;
 
 void setup() {
-  SerialDisplay.begin();
-  SerialDisplay.addButton('c', "Circle");
-  SerialDisplay.addButton('o', "Color");
+  Display.begin();
+  Display.addButton('c', "Circle");
+  Display.addButton('o', "Color");
 }
 
 void loop() {
-  if (SerialDisplay.readMessage(&msg) && msg.what == MESSAGE_BUTTON) {
-        if (msg.data.button == 'c') {
-  		SerialDisplay.fillCircle(random(240),random(320),random(50));
+  if (Display.readMessage(&msg) && msg.what == MESSAGE_BUTTON) {
+    if (msg.data.button == 'c') {
+  		Display.fillCircle(random(240),random(320),random(50));
   	}
   	else if (msg.data.button == 'o') {
-  		SerialDisplay.foreColor(0xFF000000 | (random(256)<<16) | (random(256)<<8) | random(256));
+  		Display.foreColor(0xFF000000 | (random(256)<<16) | (random(256)<<8) | random(256));
   	}
   }
 }

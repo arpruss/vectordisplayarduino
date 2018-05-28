@@ -1,6 +1,6 @@
 #include <VectorDisplay.h>
 
-#define LED_BUILTIN PB12
+SerialDisplayClass SerialDisplay;
 VectorDisplayMessage msg;
 
 void setup() {

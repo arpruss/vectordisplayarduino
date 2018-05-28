@@ -2,6 +2,11 @@
 #define _VECTOR_DISPLAY_H
 
 #include <Arduino.h>
+
+#ifdef ESP8266
+# include <ESP8266WiFi.h>
+#endif
+
 #define VECTOR_DISPLAY_MESSAGE_SIZE 8
 #define VECTOR_DISPLAY_MAX_STRING 256
 
@@ -94,10 +99,14 @@ private:
     } args;
     uint32_t lastSend = 0;
 public:    
-    virtual void remoteFlush() = 0;
-    virtual int remoteRead() = 0;
+    virtual void remoteFlush() {
+        while(remoteAvailable()) 
+            remoteRead();
+    }
+    virtual int remoteRead() = 0; // must be non-blocking
     virtual void remoteWrite(uint8_t c) = 0;
-    virtual void remoteWrite(void* data, size_t n) = 0;
+    virtual void remoteWrite(const void* data, size_t n) = 0;
+    virtual size_t remoteAvailable() = 0;
     virtual void sendDelay() {
 #if SERIAL_DISPLAY_SEND_DELAY>0
         while(millis()-lastSend < SERIAL_DISPLAY_SEND_DELAY) ;
@@ -499,6 +508,9 @@ public:
         return pointerY;
     }
     
+    virtual void end() {
+    }
+    
     bool readMessage(VectorDisplayMessage* msg) {
         while (remoteAvailable()) {
             uint8_t c = remoteRead();
@@ -546,12 +558,9 @@ public:
     }
 };
 
-extern SerialDisplayClass {
+#ifndef NO_SERIAL_DISPLAY        
+class SerialDisplayClass : public VectorDisplayClass {
     public:    
-        virtual void remoteFlush() {
-            Serial.flush();
-        }
-        
         virtual int remoteRead() {
             return Serial.read();
         }
@@ -560,23 +569,57 @@ extern SerialDisplayClass {
             Serial.write(c);
         }
         
-        virtual void remoteWrite(void* data, size_t n) {
-            Serial.write(data, n);
+        virtual void remoteWrite(const void* data, size_t n) {
+            Serial.write((uint8_t*)data, n);
         }
 
         void begin(uint32_t speed) {
             Serial.begin(speed);
             while(!Serial) ;
-            VirtualDisplayClass::begin();
+            VectorDisplayClass::begin();
         }
         
         virtual void begin() {
             begin(115200);
         }
-}
         
-#ifndef NO_SERIAL_DISPLAY        
-extern SerialDisplayClass SerialDisplay;
+        virtual size_t remoteAvailable() {
+            return Serial.available();
+        }
+};
 #endif
 
+#ifdef ESP8266
+class WiFiDisplayClass : public VectorDisplayClass {
+    private:
+        WiFiClient client;
+    public:    
+        virtual int remoteRead() {
+            return client.read();
+        }
+        
+        virtual void remoteWrite(uint8_t c) {
+            client.write(c);
+        }
+        
+        virtual void remoteWrite(const void* data, size_t n) {
+            client.write((uint8_t*)data, n);
+        }
+        
+        virtual size_t remoteAvailable() {
+            return client.available();
+        }
+
+        bool begin(const char* host) {
+            VectorDisplayClass::begin();
+            return client.connect(host, 7788);
+        }
+        
+        virtual void end() {
+            VectorDisplayClass::end();
+            client.stop();
+        }
+};
+#endif
+        
 #endif
