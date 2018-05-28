@@ -16,7 +16,7 @@ void setup() {
   }
   Serial.println(" connected");
 
-  Display.begin();
+  Display.begin(host);
   Display.addButton('c', "Circle");
   Display.addButton('o', "Color");
 }
