@@ -37,7 +37,7 @@ struct VectorDisplayMessage {
     } data;
 } __attribute__((packed));
 
-class SerialDisplayClass : public Print {
+class VectorDisplayClass : public Print {
 private:
     const uint32_t MESSAGE_TIMEOUT = 3000;
     int gfxFontSize = 1;
@@ -94,19 +94,27 @@ private:
     } args;
     uint32_t lastSend = 0;
 public:    
-    void sendCommand(char c, const void* arguments, int argumentsLength) {
+    virtual void remoteFlush() = 0;
+    virtual int remoteRead() = 0;
+    virtual void remoteWrite(uint8_t c) = 0;
+    virtual void remoteWrite(void* data, size_t n) = 0;
+    virtual void sendDelay() {
 #if SERIAL_DISPLAY_SEND_DELAY>0
         while(millis()-lastSend < SERIAL_DISPLAY_SEND_DELAY) ;
         lastSend = millis();
 #endif        
-        Serial.write(c);
-        Serial.write(c^0xFF);
+    }
+    
+    void sendCommand(char c, const void* arguments, int argumentsLength) {
+        sendDelay();
+        remoteWrite(c);
+        remoteWrite(c^0xFF);
         if (argumentsLength > 0) 
-            Serial.write((uint8_t*)arguments, argumentsLength);
+            remoteWrite((uint8_t*)arguments, argumentsLength);
         uint8_t sum = 0;
         for (int i = 0; i<argumentsLength; i++)
             sum += ((uint8_t*)arguments)[i];
-        Serial.write((uint8_t)(sum^0xFF));
+        remoteWrite((uint8_t)(sum^0xFF));
     }
     
     
@@ -138,10 +146,10 @@ public:
     
     void startPolyLine(uint16_t n) {
         polyLineCount = n;
-        Serial.write('O');
-        Serial.write('O'^0xFF);
+        remoteWrite('O');
+        remoteWrite('O'^0xFF);
         args.twoByte[0] = n;
-        Serial.write((uint8_t*)&args, 2);
+        remoteWrite((uint8_t*)&args, 2);
         polyLineSum = args.bytes[0] + args.bytes[1];
     }
 
@@ -149,11 +157,11 @@ public:
         if (polyLineCount>0) {
             args.twoByte[0] = x;
             args.twoByte[1] = y;
-            Serial.write((uint8_t*)&args, 4);
+            remoteWrite((uint8_t*)&args, 4);
             polyLineSum += args.bytes[0] + args.bytes[1] + args.bytes[2] + args.bytes[3];
             polyLineCount--;
             if (polyLineCount == 0) {
-                Serial.write(0xFF^polyLineSum);
+                remoteWrite(0xFF^polyLineSum);
             }
         }
     }
@@ -474,11 +482,9 @@ public:
         fillCircle(x,y,r);
     }
     
-    void begin() {
-        Serial.begin(115200);
-        while (! Serial) ;
-        Serial.flush();
-        reset();
+    virtual void begin() {
+        remoteFlush();
+        initialize();
     }
     
     bool isTouchDown() {
@@ -494,8 +500,8 @@ public:
     }
     
     bool readMessage(VectorDisplayMessage* msg) {
-        while (Serial.available()) {
-            uint8_t c = Serial.read();
+        while (remoteAvailable()) {
+            uint8_t c = remoteRead();
 
             if (0 < readPos && millis()-lastMessageStart > MESSAGE_TIMEOUT)
                 readPos = 0;
@@ -540,6 +546,37 @@ public:
     }
 };
 
+extern SerialDisplayClass {
+    public:    
+        virtual void remoteFlush() {
+            Serial.flush();
+        }
+        
+        virtual int remoteRead() {
+            return Serial.read();
+        }
+        
+        virtual void remoteWrite(uint8_t c) {
+            Serial.write(c);
+        }
+        
+        virtual void remoteWrite(void* data, size_t n) {
+            Serial.write(data, n);
+        }
+
+        void begin(uint32_t speed) {
+            Serial.begin(speed);
+            while(!Serial) ;
+            VirtualDisplayClass::begin();
+        }
+        
+        virtual void begin() {
+            begin(115200);
+        }
+}
+        
+#ifndef NO_SERIAL_DISPLAY        
 extern SerialDisplayClass SerialDisplay;
+#endif
 
 #endif
