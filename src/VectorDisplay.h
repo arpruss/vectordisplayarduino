@@ -528,7 +528,8 @@ public:
     void setTextWrap(boolean w) {
         wrap = w;
     }
-    
+
+        // TODO: fix back color handling
     virtual size_t write(uint8_t c) {
         if (curTextColor565 != curForeColor565) {
             foreColor565(curTextColor565);
@@ -542,6 +543,7 @@ public:
         return 0;
     }
 
+        // TODO: fix back color handling
     virtual size_t write(const char* s) {
         if (curTextColor565 != curForeColor565) {
             foreColor565(curTextColor565);
