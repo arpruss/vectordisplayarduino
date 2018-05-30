@@ -87,9 +87,9 @@ class VectorDisplayClass : public Print {
 private:
     const uint32_t MESSAGE_TIMEOUT = 3000;
     int gfxFontSize = 1;
-    int curx;
-    int cury;
-    int readPos;
+    int curx = 0;
+    int cury = 0;
+    int readPos = 0;
     int32_t curForeColor565 = -1;
     uint32_t lastMessageStart = 0;
     uint16_t curTextColor565 = 0xFFFF;
@@ -99,6 +99,7 @@ private:
     int curHeight = 320;
     uint8_t curRotation = 0;
     bool pointerDown;
+    bool wrap = 1;
     uint16_t polyLineCount;
     uint8_t polyLineSum;
     
@@ -235,7 +236,7 @@ public:
     void initialize() {
         args.twoByte[0] = 0x1234; // endianness detector
         args.twoByte[1] = 0;
-        sendCommand('H', &args, 4);
+        sendCommandWithAck('H', &args, 4);
     }
     
     void fillCircle(int x, int y, int r) {
@@ -352,6 +353,12 @@ public:
         sendCommand('A', &args, 3);
     }
     
+    void rounded(uint8_t value) {
+        args.attribute8.attr = 'n';
+        args.attribute8.value = value ? 1 : 0;
+        sendCommand('Y', &args, 2);
+    }
+    
     void thickness(FixedPoint32 t) {
         args.attribute32.attr = 't';
         args.attribute32.value = t;
@@ -425,7 +432,71 @@ public:
         sendCommand('Y', &args, 2);
     }
     
-    /* Roughly compatible with Adafruit GFX */
+    bool isTouchDown() {
+        return pointerDown;
+    }
+    
+    int getTouchX() {
+        return pointerX;
+    }
+    
+    int getTouchY() {
+        return pointerY;
+    }
+        
+    bool readMessage(VectorDisplayMessage* msg) {
+        while (remoteAvailable()) {
+            uint8_t c = remoteRead();
+
+            if (0 < readPos && millis()-lastMessageStart > MESSAGE_TIMEOUT)
+                readPos = 0;
+
+            if (2 <= readPos) {
+                readBuf[readPos++] = c;
+                if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
+                    readPos = 0;
+                    if (msg != NULL) 
+                        memcpy(msg, readBuf, sizeof(VectorDisplayMessage));
+                    else
+                        msg = (VectorDisplayMessage*)readBuf;
+                                        
+                    if (msg->what == MESSAGE_DOWN || msg->what == MESSAGE_UP || msg->what == MESSAGE_MOVE) {
+                        pointerDown = msg->what != MESSAGE_UP;
+                        pointerX = msg->data.xy.x;
+                        pointerY = msg->data.xy.y;
+                    }
+                    return true;
+                }
+                continue;
+            }
+            
+            if (1 <= readPos) {
+                if ( (*readBuf == 'U' && c == 'P') ||
+                     (*readBuf == 'D' && c == 'N') ||
+                     (*readBuf == 'M' && c == 'V') ||
+                     (*readBuf == 'B' && c == 'T') ||
+                     (*readBuf == 'A' && c == 'c') 
+                     ) {
+                    readBuf[readPos++] = c;
+                    continue;
+                }
+                readPos = 0;
+            }
+            if (readPos == 0 && (c == 'U' || c == 'D' || c == 'M' || c == 'B' || c == 'A')) {
+                readBuf[readPos++] = c;
+                lastMessageStart = millis();
+            }
+        }
+        return false;
+    }
+
+    /* The following are meant to be compatible with Adafruit GFX */
+    void cp437(boolean s) {
+        args.attribute8.attr = 'i';
+        args.attribute8.value = s ? 1 : 0;
+        sendCommand('Y', &args, 2);
+    }
+    
     void setRotation(uint8_t r) {
         args.attribute8.attr = 'r';
         args.attribute8.value = r;
@@ -454,9 +525,17 @@ public:
         cury = y;
     }
     
+    void setTextWrap(boolean w) {
+        wrap = w;
+    }
+    
     virtual size_t write(uint8_t c) {
         if (curTextColor565 != curForeColor565) {
             foreColor565(curTextColor565);
+        }
+        if (wrap && curx + 5*gfxFontSize>width()) {
+            curx = 0;
+            cury += 8*gfxFontSize;
         }
         text(curx, cury, (char*)&c, 1);
         curx += 5*gfxFontSize;
@@ -468,8 +547,27 @@ public:
             foreColor565(curTextColor565);
         }
         size_t l = strlen(s);
-        text(curx, cury, s);
-        curx += 5*gfxFontSize*l;
+        int w = width();
+        if (!wrap || curx + 5*gfxFontSize*l <= w) {
+            text(curx, cury, s);
+            curx += 5*gfxFontSize*l;
+        }
+        else {
+            while(l>0) {
+                int end = ((int)w-curx)/(5*gfxFontSize);
+                if (end <= 0) {
+                    curx = 0;
+                    cury += 8*gfxFontSize;
+                    end = w/(5*gfxFontSize);
+                }
+                if (end > l)
+                    end = l;
+                text(curx, cury, s, end);
+                l-=end;
+                s += end;
+                curx = 5*gfxFontSize*end;
+            }
+        }
         return 0;
     }
     
@@ -543,65 +641,7 @@ public:
         initialize();
     }
     
-    bool isTouchDown() {
-        return pointerDown;
-    }
-    
-    int getTouchX() {
-        return pointerX;
-    }
-    
-    int getTouchY() {
-        return pointerY;
-    }
-    
     virtual void end() {
-    }
-    
-    bool readMessage(VectorDisplayMessage* msg) {
-        while (remoteAvailable()) {
-            uint8_t c = remoteRead();
-
-            if (0 < readPos && millis()-lastMessageStart > MESSAGE_TIMEOUT)
-                readPos = 0;
-
-            if (2 <= readPos) {
-                readBuf[readPos++] = c;
-                if (readPos >= VECTOR_DISPLAY_MESSAGE_SIZE) {
-                    readPos = 0;
-                    if (msg != NULL) 
-                        memcpy(msg, readBuf, sizeof(VectorDisplayMessage));
-                    else
-                        msg = (VectorDisplayMessage*)readBuf;
-                                        
-                    if (msg->what == MESSAGE_DOWN || msg->what == MESSAGE_UP || msg->what == MESSAGE_MOVE) {
-                        pointerDown = msg->what != MESSAGE_UP;
-                        pointerX = msg->data.xy.x;
-                        pointerY = msg->data.xy.y;
-                    }
-                    return true;
-                }
-                continue;
-            }
-            
-            if (1 <= readPos) {
-                if ( (*readBuf == 'U' && c == 'P') ||
-                     (*readBuf == 'D' && c == 'N') ||
-                     (*readBuf == 'M' && c == 'V') ||
-                     (*readBuf == 'B' && c == 'T') ||
-                     (*readBuf == 'A' && c == 'c') 
-                     ) {
-                    readBuf[readPos++] = c;
-                    continue;
-                }
-                readPos = 0;
-            }
-            if (readPos == 0 && (c == 'U' || c == 'D' || c == 'M' || c == 'B' || c == 'A')) {
-                readBuf[readPos++] = c;
-                lastMessageStart = millis();
-            }
-        }
-        return false;
     }
 };
 
