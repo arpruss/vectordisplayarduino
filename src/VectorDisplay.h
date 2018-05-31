@@ -17,8 +17,8 @@
 #define ALIGN_BOTTOM 'b'
 #define ALIGN_BASELINE 'l'
 
-#ifndef SERIAL_DISPLAY_SEND_DELAY
-#define SERIAL_DISPLAY_SEND_DELAY 0
+#ifndef VECTOR_DISPLAY_SEND_DELAY
+#define VECTOR_DISPLAY_SEND_DELAY 0
 #endif
 
 #define TFT_BLACK       0x0000      /*   0,   0,   0 */
@@ -150,8 +150,8 @@ public:
     virtual void remoteWrite(const void* data, size_t n) = 0;
     virtual size_t remoteAvailable() = 0;
     virtual void sendDelay() {
-#if SERIAL_DISPLAY_SEND_DELAY>0
-        while(millis()-lastSend < SERIAL_DISPLAY_SEND_DELAY) ;
+#if VECTOR_DISPLAY_SEND_DELAY>0
+        while(millis()-lastSend < VECTOR_DISPLAY_SEND_DELAY) ;
         lastSend = millis();
 #endif        
     }
@@ -700,34 +700,37 @@ public:
 };
 
 #ifndef NO_SERIAL_DISPLAY        
-class SerialDisplayClass : public VectorDisplayClass {
-    public:    
+template<class S, S& s>
+class SerialVectorDisplayClass : public VectorDisplayClass {
+    public:
         virtual int remoteRead() {
-            return Serial.read();
+            return s.read();
         }
         
         virtual void remoteWrite(uint8_t c) {
-            Serial.write(c);
+            s.write(c);
         }
         
         virtual void remoteWrite(const void* data, size_t n) {
-            Serial.write((uint8_t*)data, n);
+            s.write((uint8_t*)data, n);
         }
 
         void begin(uint32_t speed) {
-            Serial.begin(speed);
-            while(!Serial) ;
+            s.begin(speed);
+            while(!s) ;
             VectorDisplayClass::begin();
         }
         
         virtual void begin() {
-            begin(115200);
+            s.begin(115200);
         }
         
         virtual size_t remoteAvailable() {
-            return Serial.available();
-        }
+            return s.available();
+        }        
 };
+
+typedef class SerialVectorDisplayClass<decltype(Serial),Serial> SerialDisplayClass;
 #endif
 
 #ifdef ESP8266
