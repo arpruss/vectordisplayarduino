@@ -106,7 +106,7 @@ private:
     uint8_t readBuf[VECTOR_DISPLAY_MESSAGE_SIZE];
     union {
         uint32_t color;
-        uint16_t twoByte[4];
+        uint16_t twoByte[9];
         struct {
             uint16_t x;
             uint16_t y;
@@ -231,6 +231,16 @@ public:
         args.twoByte[2] = x2;
         args.twoByte[3] = y2;
         sendCommand('R', &args, 8);
+    }
+    
+    void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3) {
+        args.twoByte[0] = x1;
+        args.twoByte[1] = y1;
+        args.twoByte[2] = x2;
+        args.twoByte[3] = y2;
+        args.twoByte[4] = x3;
+        args.twoByte[5] = y3;
+        sendCommand('G', &args, 12);
     }
     
     void initialize() {
@@ -646,17 +656,32 @@ public:
     virtual void end() {
     }
     
-    /* the following Adafruit GFX APIs are not implemented at present */
+    void fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+      int16_t x2, int16_t y2, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        fillTriangle(x0,y0,x1,y1,x2,y2);
+    }
+
+    void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+      int16_t x2, int16_t y2, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        line(x0,y0,x1,y1);
+        line(x1,y1,x2,y2);
+        line(x2,y2,x0,y0);
+    }
+
+
+      /* the following Adafruit GFX APIs are not implemented at present */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
     void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
       uint16_t color) {}
     void fillCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
       int16_t delta, uint16_t color) {}
-    void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
-      int16_t x2, int16_t y2, uint16_t color) {}
-    void fillTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
-      int16_t x2, int16_t y2, uint16_t color) {}
     void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
       int16_t radius, uint16_t color) {}
     void fillRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
