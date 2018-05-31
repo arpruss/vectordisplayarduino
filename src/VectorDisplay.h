@@ -178,7 +178,7 @@ public:
             sendCommand(c, arguments, argumentsLength);
             
             while ((millis()-t0) < 500) {
-                if (readMessage(NULL) && !memcmp(readBuf, "Acknwldg", 8)) {
+                if (readMessage(NULL) && !memcmp(readBuf, "Acknwld", 7) && readBuf[7]==c) {
                     done = true;
                     break;
                 }
@@ -409,7 +409,7 @@ public:
         curHeight = height;
         args.attribute16x2.values[0] = width;
         args.attribute16x2.values[1] = height;
-        sendCommand('B', &args, 5);
+        sendCommandWithAck('B', &args, 5);
     }
     
     void continuousUpdate(bool value) {
@@ -724,69 +724,67 @@ public:
 #pragma GCC diagnostic pop
 };
 
-#ifndef NO_SERIAL_DISPLAY        
-template<class S, S& s>
-class SerialVectorDisplayClass : public VectorDisplayClass {
+class SerialDisplayClass : public VectorDisplayClass {
+    private:
+        Stream& s;
+        const bool doSerialBegin;
+    
     public:
-        virtual int remoteRead() {
+        virtual int remoteRead() override {
             return s.read();
         }
         
-        virtual void remoteWrite(uint8_t c) {
+        virtual void remoteWrite(uint8_t c) override {
             s.write(c);
         }
         
-        virtual void remoteWrite(const void* data, size_t n) {
+        virtual void remoteWrite(const void* data, size_t n) override {
             s.write((uint8_t*)data, n);
         }
 
+        /* only works with the Serial object; do not call externally without it */
         void begin(uint32_t speed) {
-            s.begin(speed);
-            while(!s) ;
+#ifndef NO_SERIAL
+            if (doSerialBegin) {
+                Serial.begin(speed);
+                while(!Serial) ;
+            }
+#endif
             VectorDisplayClass::begin();
         }
         
-        virtual void begin() {
-            s.begin(115200);
+        virtual void begin() override {
+            begin(115200);
+            VectorDisplayClass::begin();
         }
         
-        virtual size_t remoteAvailable() {
+        virtual size_t remoteAvailable() override {
             return s.available();
         }        
-};
-
-typedef class SerialVectorDisplayClass<decltype(Serial),Serial> SerialDisplayClass;
+        
+#ifndef NO_SERIAL
+        SerialDisplayClass() : s(Serial), doSerialBegin(true)  {}
 #endif
 
+        SerialDisplayClass(Stream& _s) : s(_s), doSerialBegin(false) {}
+};
+
 #ifdef ESP8266
-class WiFiDisplayClass : public VectorDisplayClass {
+class WiFiDisplayClass : public SerialDisplayClass {
     private:
         WiFiClient client;
     public:    
-        virtual int remoteRead() {
-            return client.read();
-        }
-        
-        virtual void remoteWrite(uint8_t c) {
-            client.write(c);
-        }
-        
-        virtual void remoteWrite(const void* data, size_t n) {
-            client.write((uint8_t*)data, n);
-        }
-        
-        virtual size_t remoteAvailable() {
-            return client.available();
-        }
-
         bool begin(const char* host) {
             VectorDisplayClass::begin();
             return client.connect(host, 7788);
         }
         
-        virtual void end() {
+        virtual void end() override {
             VectorDisplayClass::end();
             client.stop();
+        }
+        
+        WiFiDisplayClass() : SerialDisplayClass(client) {            
         }
 };
 #endif
