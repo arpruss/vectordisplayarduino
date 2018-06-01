@@ -102,6 +102,7 @@ private:
     bool wrap = 1;
     uint16_t polyLineCount;
     uint8_t polyLineSum;
+    uint32_t delayTime = 0;
     
     uint8_t readBuf[VECTOR_DISPLAY_MESSAGE_SIZE];
     union {
@@ -140,7 +141,21 @@ private:
         char text[VECTOR_DISPLAY_MAX_STRING+1];
     } args;
     uint32_t lastSend = 0;
+    
+private:    
+    inline void sendDelay() {
+        if (delayTime>0) {
+            while(millis()-lastSend < delayTime) ;
+            lastSend = millis();
+        }
+    }
+    
 public:    
+    void setDelay(uint32_t delayMillis) {
+        delayTime = delayMillis;
+        lastSend = millis();
+    }
+    
     virtual void remoteFlush() {
         while(remoteAvailable()) 
             remoteRead();
@@ -149,13 +164,7 @@ public:
     virtual void remoteWrite(uint8_t c) = 0;
     virtual void remoteWrite(const void* data, size_t n) = 0;
     virtual size_t remoteAvailable() = 0;
-    virtual void sendDelay() {
-#if VECTOR_DISPLAY_SEND_DELAY>0
-        while(millis()-lastSend < VECTOR_DISPLAY_SEND_DELAY) ;
-        lastSend = millis();
-#endif        
-    }
-    
+
     void sendCommand(char c, const void* arguments, int argumentsLength) {
         sendDelay();
         remoteWrite(c);
@@ -185,7 +194,7 @@ public:
             }
             
         } while(!done);        
-    }
+    }    
     
     uint16_t width() {
         return (curRotation%2)?curHeight:curWidth;
@@ -195,13 +204,21 @@ public:
         return (curRotation%2)?curWidth:curHeight;
     }
     
-    void startPolyLine(uint16_t n) {
+    void startPoly(char c, uint16_t n) {
         polyLineCount = n;
-        remoteWrite('O');
-        remoteWrite('O'^0xFF);
+        remoteWrite(c);
+        remoteWrite(c^0xFF);
         args.twoByte[0] = n;
         remoteWrite((uint8_t*)&args, 2);
         polyLineSum = args.bytes[0] + args.bytes[1];
+    }
+
+    void startFillPoly(uint16_t n) {
+        startPoly('N', n);
+    }
+
+    void startPolyLine(uint16_t n) {
+        startPoly('O', n);
     }
 
     void addPolyLine(int16_t x, int16_t y) {
