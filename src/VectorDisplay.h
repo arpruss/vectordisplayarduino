@@ -134,6 +134,14 @@ private:
             uint32_t value;
         } __attribute__((packed)) attribute32;
         struct {
+            uint8_t filled;
+            uint16_t x1;
+            uint16_t y1;
+            uint16_t x2;
+            uint16_t y2;
+            uint16_t r;
+        } __attribute__((packed)) roundedRectangle;
+        struct {
             char attr;
             uint16_t values[2];
         } __attribute__((packed)) attribute16x2;        
@@ -248,6 +256,24 @@ public:
         args.twoByte[2] = x2;
         args.twoByte[3] = y2;
         sendCommand('R', &args, 8);
+    }
+    
+    void roundedRectangle(int x1, int y1, int x2, int y2, int r, boolean fill) {
+        args.roundedRectangle.filled = fill ? 1 : 0;
+        args.roundedRectangle.x1 = x1;
+        args.roundedRectangle.x2 = x2;
+        args.roundedRectangle.y1 = y1;
+        args.roundedRectangle.y2 = y2;
+        args.roundedRectangle.r = r;
+        sendCommand('Q', &args, 11);
+    }
+    
+    void roundedRectangle(int x1, int y1, int x2, int y2, int r) {
+        roundedRectangle(x1,y1,x2,y2,r,false);
+    }
+    
+    void fillRoundedRectangle(int x1, int y1, int x2, int y2, int r) {
+        roundedRectangle(x1,y1,x2,y2,r,true);
     }
     
     void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3) {
@@ -691,6 +717,22 @@ public:
         line(x2,y2,x0,y0);
     }
 
+    void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
+      int16_t radius, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        roundedRectangle(x0,y0,w,h,radius,false);
+    }
+      
+    void fillRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
+      int16_t radius, uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        roundedRectangle(x0,y0,w,h,radius,true);          
+    }
+
 
       /* the following Adafruit GFX APIs are not implemented at present */
 #pragma GCC diagnostic push
@@ -699,10 +741,6 @@ public:
       uint16_t color) {}
     void fillCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
       int16_t delta, uint16_t color) {}
-    void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
-      int16_t radius, uint16_t color) {}
-    void fillRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
-      int16_t radius, uint16_t color) {}
     void drawBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
       int16_t w, int16_t h, uint16_t color) {}
     void drawBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
