@@ -134,12 +134,12 @@ private:
             uint32_t value;
         } __attribute__((packed)) attribute32;
         struct {
-            uint8_t filled;
             uint16_t x1;
             uint16_t y1;
             uint16_t x2;
             uint16_t y2;
             uint16_t r;
+            uint8_t filled;
         } __attribute__((packed)) roundedRectangle;
         struct {
             char attr;
