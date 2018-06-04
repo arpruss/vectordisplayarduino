@@ -542,6 +542,10 @@ public:
         }
         return false;
     }
+    
+    uint32_t color565To8888(uint16_t c) {
+        return 0xFF000000 | ((((c>>11) & 0x1F) * 255 / 0x1F) << 16) | ((((c>>5) & 0x3F) * 255 / 0x3F) << 8) | ((c & 0x1F) * 255 / 0x1F);
+    }
 
     /* The following are meant to be compatible with Adafruit GFX */
     void cp437(boolean s) {
