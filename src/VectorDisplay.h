@@ -10,6 +10,9 @@
 #define VECTOR_DISPLAY_MESSAGE_SIZE 8
 #define VECTOR_DISPLAY_MAX_STRING 256
 
+#define VECTOR_DISPLAY_DEFAULT_WIDTH  240
+#define VECTOR_DISPLAY_DEFAULT_HEIGHT 320
+
 #define ALIGN_LEFT 'l'
 #define ALIGN_RIGHT 'r'
 #define ALIGN_CENTER 'c'
@@ -85,7 +88,12 @@ struct VectorDisplayMessage {
 
 class VectorDisplayClass : public Print {
 private:
-    const uint32_t MESSAGE_TIMEOUT = 3000;
+    static const uint32_t MAX_BUFFER = (uint32_t)1024*256;
+    static const uint32_t MESSAGE_TIMEOUT = 3000;
+    static const uint8_t FLAG_LOW_ENDIAN_BITMAP = 1;
+    static const uint8_t FLAG_HAVE_MASK = 2;
+    static const uint8_t FLAG_PAD_BYTE = 4;
+
     int gfxFontSize = 1;
     int curx = 0;
     int cury = 0;
@@ -95,8 +103,8 @@ private:
     uint16_t curTextColor565 = 0xFFFF;
     int pointerX;
     int pointerY;
-    int curWidth = 240;
-    int curHeight = 320;
+    int curWidth = VECTOR_DISPLAY_DEFAULT_WIDTH;
+    int curHeight = VECTOR_DISPLAY_DEFAULT_HEIGHT;
     uint8_t curRotation = 0;
     bool pointerDown;
     bool wrap = 1;
@@ -113,6 +121,13 @@ private:
             uint16_t y;
             char text[VECTOR_DISPLAY_MAX_STRING+1];
         } __attribute__((packed)) xyText;
+        struct {
+            uint16_t endianness;
+            uint16_t width;
+            uint16_t height;
+            FixedPoint32 aspectRatio;
+            uint16_t reserved[3];
+        } __attribute__((packed)) initialize;
         struct {
             uint8_t c;
             char text[VECTOR_DISPLAY_MAX_STRING+1];
@@ -133,6 +148,17 @@ private:
             char attr;
             uint32_t value;
         } __attribute__((packed)) attribute32;
+        struct {
+            uint32_t length;
+            uint8_t depth;
+            uint8_t flags;
+            uint16_t x;
+            uint16_t y;
+            uint16_t w;
+            uint16_t h;
+            uint32_t foreColor; // only if depth==1
+            uint32_t backColor; // only if depth==1
+        } __attribute__((packed)) bitmap;
         struct {
             uint16_t x1;
             uint16_t y1;
@@ -184,7 +210,7 @@ public:
             sum += ((uint8_t*)arguments)[i];
         remoteWrite((uint8_t)(sum^0xFF));
     }
-    
+   
     
     void sendCommandWithAck(char c, const void* arguments, int argumentsLength) {
        readPos = 0;        
@@ -210,6 +236,14 @@ public:
     
     uint16_t height() {
         return (curRotation%2)?curWidth:curHeight;
+    }
+
+    uint8_t sumBytes(void* data, int length) {
+        uint8_t* p = (uint8_t*)data;
+        uint8_t s = 0;
+        while(length-- > 0)
+            s += *p++;
+        return s;
     }
     
     void startPoly(char c, uint16_t n) {
@@ -286,10 +320,24 @@ public:
         sendCommand('G', &args, 12);
     }
     
-    void initialize() {
+/*    void initialize() {
         args.twoByte[0] = 0x1234; // endianness detector
         args.twoByte[1] = 0;
         sendCommandWithAck('H', &args, 4);
+    } */
+    
+    void initialize(int w=VECTOR_DISPLAY_DEFAULT_WIDTH, int h=VECTOR_DISPLAY_DEFAULT_HEIGHT) {
+        args.initialize.endianness = 0x1234; // endianness detector
+        args.initialize.width = w;
+        args.initialize.height = h;
+        args.initialize.aspectRatio = TO_FP32(1.);
+        args.initialize.reserved[0] = 0;
+        args.initialize.reserved[1] = 0;
+        args.initialize.reserved[2] = 0;
+        curWidth = w;
+        curHeight = h;
+        
+        sendCommandWithAck('Z', &args, 16);
     }
     
     void fillCircle(int x, int y, int r) {
@@ -442,9 +490,9 @@ public:
         sendCommand('F', NULL, 0);
     }
 
-    void reset() {
+/*    void reset() {
         sendCommandWithAck('E', NULL, 0);
-    }
+    } */
 
     void coordinates(int width, int height) {
         args.attribute16x2.attr = 'c';
@@ -545,6 +593,58 @@ public:
     
     uint32_t color565To8888(uint16_t c) {
         return 0xFF000000 | ((((c>>11) & 0x1F) * 255 / 0x1F) << 16) | ((((c>>5) & 0x3F) * 255 / 0x3F) << 8) | ((c & 0x1F) * 255 / 0x1F);
+    }
+
+    void bitmap(int16_t x, int16_t y, const uint8_t bmp[],
+      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=FLAG_LOW_ENDIAN_BITMAP) /* PROGMEM */ {
+        uint32_t size = (flags & FLAG_LOW_ENDIAN_BITMAP) ? (w+7)/8*h : (w*h+7)/8;
+        if (size + 22 + 1 > MAX_BUFFER)
+            return;
+
+        sendDelay();
+        remoteWrite('K');
+        remoteWrite('K'^0xFF);
+        args.bitmap.length = 22+size;
+        args.bitmap.depth = 1;
+        args.bitmap.flags = flags;
+        args.bitmap.x = x;
+        args.bitmap.y = y;
+        args.bitmap.w = w;
+        args.bitmap.h = h;
+        args.bitmap.foreColor = foreColor;
+        args.bitmap.backColor = backColor;
+        uint8_t sum = sumBytes(&args, 22);
+        remoteWrite(&args,22);
+        for (uint32_t i=0; i<size; i++) {
+            uint8_t c = pgm_read_byte_near(bmp+i);
+            remoteWrite(c);
+            sum += c;
+        }
+        remoteWrite(sum^0xFF);
+    }
+
+    void bitmap(int16_t x, int16_t y, uint8_t *bmp,
+      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=FLAG_LOW_ENDIAN_BITMAP) {
+        uint32_t size = (flags & FLAG_LOW_ENDIAN_BITMAP) ? (w+7)/8*h : (w*h+7)/8;
+        if (size + 22 + 1 > MAX_BUFFER)
+            return;
+
+        sendDelay();
+        remoteWrite('K');
+        remoteWrite('K'^0xFF);
+        args.bitmap.length = 22+size;
+        args.bitmap.depth = 1;
+        args.bitmap.flags = flags;
+        args.bitmap.x = x;
+        args.bitmap.y = y;
+        args.bitmap.w = w;
+        args.bitmap.h = h;
+        args.bitmap.foreColor = foreColor;
+        args.bitmap.backColor = backColor;
+        remoteWrite(&args,22);
+        remoteWrite(bmp,size);
+        uint8_t sum = sumBytes(&args, 22) + sumBytes((void*)bmp, size);
+        remoteWrite(sum^0xFF);
     }
 
     /* The following are meant to be compatible with Adafruit GFX */
@@ -695,9 +795,9 @@ public:
         fillCircle(x,y,r);
     }
     
-    virtual void begin() {
+    virtual void begin(int width=VECTOR_DISPLAY_DEFAULT_WIDTH, int height=VECTOR_DISPLAY_DEFAULT_HEIGHT) {
         remoteFlush();
-        initialize();
+        initialize(width, height);
     }
     
     virtual void end() {
@@ -737,6 +837,31 @@ public:
         roundedRectangle(x0,y0,w,h,radius,true);          
     }
 
+    // bitmap functions not tested
+    void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
+      int16_t w, int16_t h, uint16_t color) /* PROGMEM */ {
+        bitmap(x,y,bmp,w,h,color565To8888(color),0); // transparent background
+    }
+
+    void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
+      int16_t w, int16_t h, uint16_t color) {
+        bitmap(x,y,bmp,w,h,color565To8888(color),0); // transparent background
+    }
+
+    void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
+      int16_t w, int16_t h, uint16_t color, uint16_t bg) {
+        bitmap(x,y,bmp,w,h,color565To8888(color),color565To8888(bg)); 
+    }
+    
+    void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
+      int16_t w, int16_t h, uint16_t color, uint16_t bg) {
+        bitmap(x,y,bmp,w,h,color565To8888(color),color565To8888(bg));       
+    }
+
+    void drawXBitmap(int16_t x, int16_t y, const uint8_t bmp[],
+      int16_t w, int16_t h, uint16_t color) {
+        bitmap(x,y,bmp,w,h,color565To8888(color),0,FLAG_PAD_BYTE);                 
+    }
 
       /* the following Adafruit GFX APIs are not implemented at present */
 #pragma GCC diagnostic push
@@ -745,34 +870,24 @@ public:
       uint16_t color) {}
     void fillCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
       int16_t delta, uint16_t color) {}
-    void drawBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
-      int16_t w, int16_t h, uint16_t color) {}
-    void drawBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
-      int16_t w, int16_t h, uint16_t color, uint16_t bg) {}
-    void drawBitmap(int16_t x, int16_t y, uint8_t *bitmap,
-      int16_t w, int16_t h, uint16_t color) {}
-    void drawBitmap(int16_t x, int16_t y, uint8_t *bitmap,
-      int16_t w, int16_t h, uint16_t color, uint16_t bg) {}
-    void drawXBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
-      int16_t w, int16_t h, uint16_t color) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y, const uint8_t bitmap[],
+    void drawGrayscaleBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y, uint8_t *bitmap,
+    void drawGrayscaleBitmap(int16_t x, int16_t y, uint8_t *bmp,
       int16_t w, int16_t h) {}
     void drawGrayscaleBitmap(int16_t x, int16_t y,
-      const uint8_t bitmap[], const uint8_t mask[],
+      const uint8_t bmp[], const uint8_t mask[],
       int16_t w, int16_t h) {}
     void drawGrayscaleBitmap(int16_t x, int16_t y,
-      uint8_t *bitmap, uint8_t *mask, int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y, const uint16_t bitmap[],
+      uint8_t *bmp, uint8_t *mask, int16_t w, int16_t h) {}
+    void drawRGBBitmap(int16_t x, int16_t y, const uint16_t bmp[],
       int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y, uint16_t *bitmap,
-      int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y,
-      const uint16_t bitmap[], const uint8_t mask[],
+    void drawRGBBitmap(int16_t x, int16_t y, uint16_t *bmp,
       int16_t w, int16_t h) {}
     void drawRGBBitmap(int16_t x, int16_t y,
-      uint16_t *bitmap, uint8_t *mask, int16_t w, int16_t h) {}
+      const uint16_t bmp[], const uint8_t mask[],
+      int16_t w, int16_t h) {}
+    void drawRGBBitmap(int16_t x, int16_t y,
+      uint16_t *bmp, uint8_t *mask, int16_t w, int16_t h) {}
     void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color,
       uint16_t bg, uint8_t size) {}
     void setFont(const void /*GFXfont*/ *f = NULL) {}
@@ -802,19 +917,19 @@ class SerialDisplayClass : public VectorDisplayClass {
         }
 
         /* only works with the Serial object; do not call externally without it */
-        void begin(uint32_t speed) {
+        void begin(uint32_t speed, int width=VECTOR_DISPLAY_DEFAULT_WIDTH, int height=VECTOR_DISPLAY_DEFAULT_HEIGHT) {
 #ifndef NO_SERIAL
             if (doSerialBegin) {
                 Serial.begin(speed);
                 while(!Serial) ;
             }
 #endif
-            VectorDisplayClass::begin();
+            VectorDisplayClass::begin(width, height);
         }
         
-        virtual void begin() override {
+        virtual void begin(int width=VECTOR_DISPLAY_DEFAULT_WIDTH, int height=VECTOR_DISPLAY_DEFAULT_HEIGHT) override {
             begin(115200);
-            VectorDisplayClass::begin();
+            VectorDisplayClass::begin(width, height);
         }
         
         virtual size_t remoteAvailable() override {
@@ -833,8 +948,8 @@ class WiFiDisplayClass : public SerialDisplayClass {
     private:
         WiFiClient client;
     public:    
-        bool begin(const char* host) {
-            VectorDisplayClass::begin();
+        bool begin(const char* host, int width=VECTOR_DISPLAY_DEFAULT_WIDTH, int height=VECTOR_DISPLAY_DEFAULT_HEIGHT) {
+            VectorDisplayClass::begin(width, height);
             return client.connect(host, 7788);
         }
         
