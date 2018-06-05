@@ -596,15 +596,15 @@ public:
     }
 
     void bitmap(int16_t x, int16_t y, const uint8_t bmp[],
-      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=FLAG_LOW_ENDIAN_BITMAP) /* PROGMEM */ {
-        uint32_t size = (flags & FLAG_PAD_BYTE) ? (w+7)/8*h : (w*h+7)/8;
+      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=0) /* PROGMEM */ {
+        uint32_t size = (flags & FLAG_PAD_BYTE) ? ((uint32_t)w+7)/8*h : ((uint32_t)w*h+7)/8;
         if (size + 22 + 1 > MAX_BUFFER)
             return;
 
         sendDelay();
         remoteWrite('K');
         remoteWrite('K'^0xFF);
-        args.bitmap.length = 22+size;
+        args.bitmap.length = 8+size;
         args.bitmap.depth = 1;
         args.bitmap.flags = flags;
         args.bitmap.x = x;
@@ -624,15 +624,15 @@ public:
     }
 
     void bitmap(int16_t x, int16_t y, uint8_t *bmp,
-      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=FLAG_LOW_ENDIAN_BITMAP) {
-        uint32_t size = (flags & FLAG_LOW_ENDIAN_BITMAP) ? (w+7)/8*h : (w*h+7)/8;
+      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=0) {
+        uint32_t size = (flags & FLAG_PAD_BYTE) ? ((uint32_t)w+7)/8*h : ((uint32_t)w*h+7)/8;
         if (size + 22 + 1 > MAX_BUFFER)
             return;
 
         sendDelay();
         remoteWrite('K');
         remoteWrite('K'^0xFF);
-        args.bitmap.length = 22+size;
+        args.bitmap.length = 8+size;
         args.bitmap.depth = 1;
         args.bitmap.flags = flags;
         args.bitmap.x = x;
@@ -860,7 +860,7 @@ public:
 
     void drawXBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) {
-        bitmap(x,y,bmp,w,h,color565To8888(color),0,FLAG_PAD_BYTE);                 
+        bitmap(x,y,bmp,w,h,color565To8888(color),0,FLAG_PAD_BYTE|FLAG_LOW_ENDIAN_BITMAP);               
     }
 
       /* the following Adafruit GFX APIs are not implemented at present */
