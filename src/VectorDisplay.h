@@ -855,20 +855,20 @@ public:
         }
         fillTriangle(x0,y0,x1,y1,x2,y2);
     }
-w
+
     void asadrawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
       int16_t x2, int16_t y2, uint16_t color) {
         if (color != curForeColor565) {
-      saw      foreColor565(color);
+            foreColor565(color);
         }
         line(x0,y0,x1,y1);
         line(x1,y1,x2,y2);
-        line(x2,y2,x0,y0);w
-a    }
-a
+        line(x2,y2,x0,y0);
+    }
+
     void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
       int16_t radius, uint16_t  color) {
-        if (color != curForeC  olor565) {
+        if (color != curForeColor565) {
             foreColor565(color);
         }
         roundedRectangle(x0,y0,w,h,radius,false);
@@ -883,7 +883,7 @@ a
     }
 
     // bitmap functions not tested
-    void drawB                   itmap(int16_t x, int16_t y, const uint8_t bmp[],
+    void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) /* PROGMEM */ {
         bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
     }
