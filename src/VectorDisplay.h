@@ -597,7 +597,7 @@ public:
 
     void bitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=FLAG_LOW_ENDIAN_BITMAP) /* PROGMEM */ {
-        uint32_t size = (flags & FLAG_LOW_ENDIAN_BITMAP) ? (w+7)/8*h : (w*h+7)/8;
+        uint32_t size = (flags & FLAG_PAD_BYTE) ? (w+7)/8*h : (w*h+7)/8;
         if (size + 22 + 1 > MAX_BUFFER)
             return;
 
@@ -928,8 +928,7 @@ class SerialDisplayClass : public VectorDisplayClass {
         }
         
         virtual void begin(int width=VECTOR_DISPLAY_DEFAULT_WIDTH, int height=VECTOR_DISPLAY_DEFAULT_HEIGHT) override {
-            begin(115200);
-            VectorDisplayClass::begin(width, height);
+            begin(115200, width, height);
         }
         
         virtual size_t remoteAvailable() override {
