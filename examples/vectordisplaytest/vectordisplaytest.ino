@@ -1,5 +1,6 @@
 #include <VectorDisplay.h>
 
+#define LED_BUILTIN PB12
 SerialDisplayClass SerialDisplay;
 VectorDisplayMessage msg;
 
@@ -11,6 +12,7 @@ void setup() {
   digitalWrite(LED_BUILTIN, 0);
   delay(5000);
   digitalWrite(LED_BUILTIN, 1);
+  SerialDisplay.begin(); //115200, 240,320);
   SerialDisplay.clear();
   SerialDisplay.addButton('c', "Circle");
   SerialDisplay.addButton('l', "Clear");
@@ -19,17 +21,12 @@ void setup() {
 uint16_t y=0;
 
 void loop() {
-
-//  Serial.println("VECTORDISPLAYTEST");
-//  delay(100);
-//  digitalWrite(LED_BUILTIN, 1);
-//  delay(100);
   y = (y + 1)%240;
   SerialDisplay.foreColor(0xFF000000 | ((uint32_t)y<<16));
   SerialDisplay.line(0, y, 239, 319);
-  //SerialDisplay.text(50, 20, String(y));  
-  if (SerialDisplay.readMessage(&msg)) {
-    
+  SerialDisplay.text(50, 20, String(y));  
+#if 1
+  if (SerialDisplay.readMessage(&msg)) {    
     switch(msg.what) {
       case MESSAGE_BUTTON:
         switch(msg.data.button) {
@@ -43,5 +40,6 @@ void loop() {
         }
     }
   }
+#endif  
 }
 
