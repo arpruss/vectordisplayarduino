@@ -90,9 +90,10 @@ class VectorDisplayClass : public Print {
 private:
     static const uint32_t MAX_BUFFER = (uint32_t)1024*256;
     static const uint32_t MESSAGE_TIMEOUT = 3000;
-    static const uint8_t FLAG_LOW_ENDIAN_BITMAP = 1;
+    static const uint8_t FLAG_LOW_ENDIAN_BITS = 1;
     static const uint8_t FLAG_HAVE_MASK = 2;
     static const uint8_t FLAG_PAD_BYTE = 4;
+    static const uint8_t FLAG_LOW_ENDIAN_BYTES = 8;
 
     int gfxFontSize = 1;
     int curx = 0;
@@ -594,29 +595,58 @@ public:
     uint32_t color565To8888(uint16_t c) {
         return 0xFF000000 | ((((c>>11) & 0x1F) * 255 / 0x1F) << 16) | ((((c>>5) & 0x3F) * 255 / 0x3F) << 8) | ((c & 0x1F) * 255 / 0x1F);
     }
+    
+    uint32_t getBitmap1Size(int16_t w, int16_t h, uint8_t flags=0) {
+        return (flags & FLAG_PAD_BYTE) ? ((uint32_t)w+7)/8*h : ((uint32_t)w*h+7)/8;
+    }
+    
+    uint32_t getBitmapSize(int16_t w, int16_t h, uint8_t depth=1, uint8_t flags=0) {
+        if (depth==1) {
+            return getBitmap1Size(w,h,flags);
+        }
+        else {
+            return w*h*(depth/8);
+        }
+    }
 
     void bitmap(int16_t x, int16_t y, const uint8_t bmp[],
-      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=0) /* PROGMEM */ {
-        uint32_t size = (flags & FLAG_PAD_BYTE) ? ((uint32_t)w+7)/8*h : ((uint32_t)w*h+7)/8;
-        if (size + 22 + 1 > MAX_BUFFER)
+      int16_t w, int16_t h, uint8_t depth=1, uint8_t flags=0, const uint8_t mask[]=NULL, 
+      uint32_t foreColor=0xFFFFFFFF, 
+      uint32_t backColor=0x00FFFFFF) /* PROGMEM */ {
+        if (mask != NULL)
+            flags |= FLAG_HAVE_MASK;
+        uint32_t bitmapSize = getBitmapSize(w,h,depth,flags);
+        int headerSize = depth==1 ? 22 : 14;
+        uint32_t maskSize = mask == NULL ? 0 : getBitmap1Size(w,h,flags);
+        uint32_t fullSize = bitmapSize + headerSize + maskSize;
+        
+        if (fullSize + 1 > MAX_BUFFER)
             return;
 
         sendDelay();
         remoteWrite('K');
         remoteWrite('K'^0xFF);
-        args.bitmap.length = 8+size;
+        args.bitmap.length = fullSize;
         args.bitmap.depth = 1;
         args.bitmap.flags = flags;
         args.bitmap.x = x;
         args.bitmap.y = y;
         args.bitmap.w = w;
         args.bitmap.h = h;
-        args.bitmap.foreColor = foreColor;
-        args.bitmap.backColor = backColor;
-        uint8_t sum = sumBytes(&args, 22);
-        remoteWrite(&args,22);
-        for (uint32_t i=0; i<size; i++) {
+        if (depth == 1) {
+            args.bitmap.foreColor = foreColor;
+            args.bitmap.backColor = backColor;
+        }
+        
+        uint8_t sum = sumBytes(&args, headerSize);
+        remoteWrite(&args,headerSize);
+        for (uint32_t i=0; i<bitmapSize; i++) {
             uint8_t c = pgm_read_byte_near(bmp+i);
+            remoteWrite(c);
+            sum += c;
+        }
+        for (uint32_t i=0; i<maskSize; i++) {
+            uint8_t c = pgm_read_byte_near(mask+i);
             remoteWrite(c);
             sum += c;
         }
@@ -624,26 +654,41 @@ public:
     }
 
     void bitmap(int16_t x, int16_t y, uint8_t *bmp,
-      int16_t w, int16_t h, uint32_t foreColor, uint32_t backColor, uint8_t flags=0) {
-        uint32_t size = (flags & FLAG_PAD_BYTE) ? ((uint32_t)w+7)/8*h : ((uint32_t)w*h+7)/8;
-        if (size + 22 + 1 > MAX_BUFFER)
+      int16_t w, int16_t h, uint8_t depth, uint8_t flags=0, 
+      uint8_t* mask=NULL,
+      uint32_t foreColor=0xFFFFFFFF, 
+      uint32_t backColor=0x00FFFFFF) {
+        if (mask != NULL)
+            flags |= FLAG_HAVE_MASK;
+        uint32_t bitmapSize = getBitmapSize(w,h,depth,flags);
+        int headerSize = depth==1 ? 22 : 14;
+        uint32_t maskSize = mask == NULL ? 0 : getBitmap1Size(w,h,flags);
+        uint32_t fullSize = bitmapSize + headerSize + maskSize;
+        
+        if (fullSize + 1 > MAX_BUFFER)
             return;
 
         sendDelay();
         remoteWrite('K');
         remoteWrite('K'^0xFF);
-        args.bitmap.length = 8+size;
+        args.bitmap.length = fullSize;
         args.bitmap.depth = 1;
         args.bitmap.flags = flags;
         args.bitmap.x = x;
         args.bitmap.y = y;
         args.bitmap.w = w;
         args.bitmap.h = h;
-        args.bitmap.foreColor = foreColor;
-        args.bitmap.backColor = backColor;
-        remoteWrite(&args,22);
-        remoteWrite(bmp,size);
-        uint8_t sum = sumBytes(&args, 22) + sumBytes((void*)bmp, size);
+        if (depth == 1) {
+            args.bitmap.foreColor = foreColor;
+            args.bitmap.backColor = backColor;
+        }
+        remoteWrite(&args,headerSize);
+        remoteWrite(bmp,bitmapSize);
+        uint8_t sum = sumBytes(&args, headerSize) + sumBytes((void*)bmp, bitmapSize);
+        if (maskSize > 0) {
+            remoteWrite(mask,maskSize);
+            sum += sumBytes((void*)mask, maskSize);
+        }
         remoteWrite(sum^0xFF);
     }
 
@@ -810,20 +855,20 @@ public:
         }
         fillTriangle(x0,y0,x1,y1,x2,y2);
     }
-
-    void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+w
+    void asadrawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
       int16_t x2, int16_t y2, uint16_t color) {
         if (color != curForeColor565) {
-            foreColor565(color);
+      saw      foreColor565(color);
         }
         line(x0,y0,x1,y1);
         line(x1,y1,x2,y2);
-        line(x2,y2,x0,y0);
-    }
-
+        line(x2,y2,x0,y0);w
+a    }
+a
     void drawRoundRect(int16_t x0, int16_t y0, int16_t w, int16_t h,
-      int16_t radius, uint16_t color) {
-        if (color != curForeColor565) {
+      int16_t radius, uint16_t  color) {
+        if (color != curForeC  olor565) {
             foreColor565(color);
         }
         roundedRectangle(x0,y0,w,h,radius,false);
@@ -838,29 +883,29 @@ public:
     }
 
     // bitmap functions not tested
-    void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
+    void drawB                   itmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) /* PROGMEM */ {
-        bitmap(x,y,bmp,w,h,color565To8888(color),0); // transparent background
+        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
     }
 
     void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
       int16_t w, int16_t h, uint16_t color) {
-        bitmap(x,y,bmp,w,h,color565To8888(color),0); // transparent background
+        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
     }
 
     void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color, uint16_t bg) {
-        bitmap(x,y,bmp,w,h,color565To8888(color),color565To8888(bg)); 
+        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),color565To8888(bg)); 
     }
     
     void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
       int16_t w, int16_t h, uint16_t color, uint16_t bg) {
-        bitmap(x,y,bmp,w,h,color565To8888(color),color565To8888(bg));       
+        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),color565To8888(bg));       
     }
 
     void drawXBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) {
-        bitmap(x,y,bmp,w,h,color565To8888(color),0,FLAG_PAD_BYTE|FLAG_LOW_ENDIAN_BITMAP);               
+        bitmap(x,y,bmp,w,h,1,FLAG_PAD_BYTE|FLAG_LOW_ENDIAN_BITS,NULL,color565To8888(color),0);               
     }
 
       /* the following Adafruit GFX APIs are not implemented at present */
