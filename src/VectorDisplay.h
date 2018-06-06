@@ -107,8 +107,9 @@ private:
     int curWidth = VECTOR_DISPLAY_DEFAULT_WIDTH;
     int curHeight = VECTOR_DISPLAY_DEFAULT_HEIGHT;
     uint8_t curRotation = 0;
-    bool pointerDown;
+    bool pointerDown = false;
     bool wrap = 1;
+    bool fixCP437 = true;
     uint16_t polyLineCount;
     uint8_t polyLineSum;
     uint32_t delayTime = 0;
@@ -374,6 +375,13 @@ public:
         if (n>VECTOR_DISPLAY_MAX_STRING)
             n = VECTOR_DISPLAY_MAX_STRING;
         strncpy(args.xyText.text, str, n);
+        
+        if (fixCP437) {
+            for (int i=0;i<n;i++) {
+                if ((uint8_t)args.xyText.text[i] >=176)
+                    args.xyText.text[i]++;
+            }
+        }
         args.xyText.text[n] = 0;
         sendCommand('T', &args, 4+strlen(args.xyText.text)+1);
     }
@@ -609,8 +617,8 @@ public:
         }
     }
 
-    void bitmap(int16_t x, int16_t y, const uint8_t bmp[],
-      int16_t w, int16_t h, uint8_t depth=1, uint8_t flags=0, const uint8_t mask[]=NULL, 
+    void bitmap_progmem(int16_t x, int16_t y, const uint8_t* bmp,
+      int16_t w, int16_t h, uint8_t depth=1, uint8_t flags=0, const uint8_t* mask=NULL, 
       uint32_t foreColor=0xFFFFFFFF, 
       uint32_t backColor=0x00FFFFFF) /* PROGMEM */ {
         if (mask != NULL)
@@ -691,11 +699,20 @@ public:
         }
         remoteWrite(sum^0xFF);
     }
+    
+    void utf8() {
+        fixCP437 = false;
+        args.attribute8.attr = 'i';
+        args.attribute8.value = 0;
+        sendCommand('Y', &args, 2);
+    }
 
     /* The following are meant to be compatible with Adafruit GFX */
     void cp437(boolean s) {
+        // if true, activates real cp437 mode; if false, activates buggy Arduino compatible cp437 mode
+        fixCP437 = !s;
         args.attribute8.attr = 'i';
-        args.attribute8.value = s ? 1 : 0;
+        args.attribute8.value = 1;
         sendCommand('Y', &args, 2);
     }
     
@@ -885,7 +902,7 @@ public:
     // bitmap functions not tested
     void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) /* PROGMEM */ {
-        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
+        bitmap_progmem(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
     }
 
     void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
@@ -895,7 +912,7 @@ public:
 
     void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color, uint16_t bg) {
-        bitmap(x,y,bmp,w,h,1,0,NULL,color565To8888(color),color565To8888(bg)); 
+        bitmap_progmem(x,y,bmp,w,h,1,0,NULL,color565To8888(color),color565To8888(bg)); 
     }
     
     void drawBitmap(int16_t x, int16_t y, uint8_t *bmp,
@@ -905,7 +922,49 @@ public:
 
     void drawXBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) {
-        bitmap(x,y,bmp,w,h,1,FLAG_PAD_BYTE|FLAG_LOW_ENDIAN_BITS,NULL,color565To8888(color),0);               
+        bitmap_progmem(x,y,bmp,w,h,1,FLAG_PAD_BYTE|FLAG_LOW_ENDIAN_BITS,NULL,color565To8888(color),0);               
+    }
+
+    void drawGrayscaleBitmap(int16_t x, int16_t y, const uint8_t bmp[],
+      int16_t w, int16_t h) {
+        bitmap_progmem(x,y,bmp,w,h,8,0,NULL);               
+    }
+    
+    void drawGrayscaleBitmap(int16_t x, int16_t y, uint8_t *bmp,
+      int16_t w, int16_t h) {
+        bitmap(x,y,bmp,w,h,8,0,NULL);                         
+    }
+
+    void drawGrayscaleBitmap(int16_t x, int16_t y,
+      const uint8_t bmp[], const uint8_t mask[],
+      int16_t w, int16_t h) {
+        bitmap_progmem(x,y,bmp,w,h,8,0,mask);                         
+    }
+    
+    void drawGrayscaleBitmap(int16_t x, int16_t y,
+      uint8_t *bmp, uint8_t *mask, int16_t w, int16_t h) {
+        bitmap(x,y,bmp,w,h,8,0,mask);                         
+    }
+
+    void drawRGBBitmap(int16_t x, int16_t y, uint16_t* bmp,
+      int16_t w, int16_t h) {
+        bitmap(x,y,(uint8_t*)bmp,w,h,16,FLAG_LOW_ENDIAN_BYTES,NULL);                                   
+    }
+
+    void drawRGBBitmap(int16_t x, int16_t y, const uint16_t bmp[],
+      int16_t w, int16_t h) {
+        bitmap_progmem(x,y,(const uint8_t*)bmp,w,h,16,FLAG_LOW_ENDIAN_BYTES,NULL);                                   
+    }
+
+    void drawRGBBitmap(int16_t x, int16_t y,
+      const uint16_t bmp[], const uint8_t mask[],
+      int16_t w, int16_t h) {
+        bitmap_progmem(x,y,(const uint8_t*)bmp,w,h,16,FLAG_LOW_ENDIAN_BYTES,(const uint8_t*)mask);                                   
+    }
+      
+    void drawRGBBitmap(int16_t x, int16_t y,
+      uint16_t *bmp, uint8_t *mask, int16_t w, int16_t h) {
+        bitmap(x,y,(uint8_t*)bmp,w,h,16,FLAG_LOW_ENDIAN_BYTES,mask);                                   
     }
 
       /* the following Adafruit GFX APIs are not implemented at present */
@@ -915,24 +974,6 @@ public:
       uint16_t color) {}
     void fillCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
       int16_t delta, uint16_t color) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y, const uint8_t bmp[],
-      int16_t w, int16_t h) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y, uint8_t *bmp,
-      int16_t w, int16_t h) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y,
-      const uint8_t bmp[], const uint8_t mask[],
-      int16_t w, int16_t h) {}
-    void drawGrayscaleBitmap(int16_t x, int16_t y,
-      uint8_t *bmp, uint8_t *mask, int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y, const uint16_t bmp[],
-      int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y, uint16_t *bmp,
-      int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y,
-      const uint16_t bmp[], const uint8_t mask[],
-      int16_t w, int16_t h) {}
-    void drawRGBBitmap(int16_t x, int16_t y,
-      uint16_t *bmp, uint8_t *mask, int16_t w, int16_t h) {}
     void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color,
       uint16_t bg, uint8_t size) {}
     void setFont(const void /*GFXfont*/ *f = NULL) {}
