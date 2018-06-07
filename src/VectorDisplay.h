@@ -302,7 +302,7 @@ public:
         sendCommand('R', &args, 8);
     }
     
-    void rectangle(int x1, int y1, int x2, int y2, fill=false) {
+    void rectangle(int x1, int y1, int x2, int y2, boolean fill=false) {
         if (fill)
             fillRectangle(x1,y1,x2,y2);
         else {
