@@ -170,6 +170,14 @@ private:
             uint8_t filled;
         } __attribute__((packed)) roundedRectangle;
         struct {
+            uint16_t x;
+            uint16_t y;
+            uint16_t r;
+            FixedPoint32 angle1;
+            FixedPoint32 sweep;
+            uint8_t filled;
+        } __attribute__((packed)) arc;
+        struct {
             char attr;
             uint16_t values[2];
         } __attribute__((packed)) attribute16x2;        
@@ -294,6 +302,18 @@ public:
         sendCommand('R', &args, 8);
     }
     
+    void rectangle(int x1, int y1, int x2, int y2, fill=false) {
+        if (fill)
+            fillRectangle(x1,y1,x2,y2);
+        else {
+            startPolyLine(4);
+            addPolyLine(x1,y1);
+            addPolyLine(x2,y1);
+            addPolyLine(x2,y2);
+            addPolyLine(x1,y2);
+        }
+    }
+    
     void roundedRectangle(int x1, int y1, int x2, int y2, int r, boolean fill) {
         args.roundedRectangle.filled = fill ? 1 : 0;
         args.roundedRectangle.x1 = x1;
@@ -360,6 +380,20 @@ public:
         args.twoByte[0] = x;
         args.twoByte[1] = y;
         sendCommand('P', &args, 4);
+    }
+    
+    void arc(int x, int y, int r, FixedPoint32 angle1, FixedPoint32 sweep, bool fill=false) {
+        args.arc.x = x;
+        args.arc.y = y;
+        args.arc.r = r;
+        args.arc.angle1 = angle1;
+        args.arc.sweep = sweep;
+        args.arc.filled = fill ? 1 : 0;
+        sendCommand('S', &args, 15);
+    }
+    
+    void arc(int x, int y, int r, float angle1, float sweep, bool fill=false) {
+        arc(x,y,r,TO_FP32(angle1),TO_FP32(sweep),fill);
     }
     
     // 32-bit fixed point
@@ -803,10 +837,7 @@ public:
         if (color != curForeColor565) {
             foreColor565(color);
         }
-        line(x,y,x+w-1,y);
-        line(x+w-1,y,x+w-1,y+h-1);
-        line(x+w-1,y+h-1,x,y+h-1);
-        line(x,y+h-1,x,y);
+        rectangle(x,y,x+w-1,y+h-1);
     }
 
     void fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color) {
@@ -873,7 +904,7 @@ public:
         fillTriangle(x0,y0,x1,y1,x2,y2);
     }
 
-    void asadrawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+    void drawTriangle(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
       int16_t x2, int16_t y2, uint16_t color) {
         if (color != curForeColor565) {
             foreColor565(color);
@@ -967,13 +998,65 @@ public:
         bitmap(x,y,(uint8_t*)bmp,w,h,16,FLAG_LOW_ENDIAN_BYTES,mask);                                   
     }
 
+    void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
+      uint16_t color) {
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        if (cornername & 0x1) {
+            arc(x0,y0,r,TO_FP32(180),TO_FP32(90), false);
+        }
+        if (cornername & 0x2) {
+            arc(x0,y0,r,TO_FP32(270),TO_FP32(90), false);
+        }            
+        if (cornername & 0x4) {
+            arc(x0,y0,r,TO_FP32(0),TO_FP32(90), false);
+        }            
+        if (cornername & 0x8) {
+            arc(x0,y0,r,TO_FP32(90),TO_FP32(90), false);
+        }            
+          
+      }
+
+    void fillCircleHelper(int16_t cx, int16_t cy, int16_t r, uint8_t corners,
+      int16_t delta, uint16_t color) {
+          /* This is not efficient, but it's there just for completeness and I don't 
+          know that much code will actually call this. The Adafruit GFX library uses
+          this for rounded rectangles, but we are doing rounded rectangles directly
+          via the Android function so we don't need this. */
+        if ((corners & 3) == 0)
+            return;
+        
+        if (color != curForeColor565) {
+            foreColor565(color);
+        }
+        
+        line(cx,cy-r,cx,cy+r+delta);
+        if (corners & 2) {            
+            arc(cx,cy,r,TO_FP32(90),TO_FP32(180),false);
+            arc(cx,cy,r,TO_FP32(90),TO_FP32(180),true);
+            arc(cx,cy+delta,r,TO_FP32(90),TO_FP32(180),false);
+            arc(cx,cy+delta,r,TO_FP32(90),TO_FP32(180),true);
+            if (delta>0) {
+                rectangle(cx-r,cy,cx,cy+delta,false);
+                rectangle(cx-r,cy,cx,cy+delta,true);
+            }       
+        }
+        if (corners & 1) {
+            arc(cx,cy,r,TO_FP32(270),TO_FP32(180),false); // drawing edges separately makes things fit better
+            arc(cx,cy,r,TO_FP32(270),TO_FP32(180),true);
+            arc(cx,cy+delta,r,TO_FP32(270),TO_FP32(180),false);
+            arc(cx,cy+delta,r,TO_FP32(270),TO_FP32(180),true);
+            if (delta>0) {
+                rectangle(cx,cy,cx+r,cy+delta,false); 
+                rectangle(cx,cy,cx+r,cy+delta,true);
+            }
+        }
+      }
+
       /* the following Adafruit GFX APIs are not implemented at present */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-    void drawCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
-      uint16_t color) {}
-    void fillCircleHelper(int16_t x0, int16_t y0, int16_t r, uint8_t cornername,
-      int16_t delta, uint16_t color) {}
     void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color,
       uint16_t bg, uint8_t size) {}
     void setFont(const void /*GFXfont*/ *f = NULL) {}
