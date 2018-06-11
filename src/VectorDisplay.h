@@ -1,7 +1,51 @@
 #ifndef _VECTOR_DISPLAY_H
 #define _VECTOR_DISPLAY_H
 
+#ifndef ARDUINO
+#define NO_SERIAL
+#include <stdint.h>
+#define pgm_read_byte_near(a) (*(uint8_t*)(a))
+
+#include <sys/timeb.h>
+#include <string>
+
+typedef std::string String;
+
+uint32_t millis() {
+    struct timeb t;
+    ftime(&t);
+    return t.millitm + t.time * 1000;
+}
+
+class Print {
+public:    
+    virtual size_t write(uint8_t c) = 0;
+    virtual size_t write(const uint8_t* s, size_t length) {
+        size_t wrote = 0;
+        while (length > 0) {
+            size_t b = write(*s++);
+            if (b <= 0)
+                break;
+            b++;
+            length--;
+        }
+        return wrote;
+    }
+    
+    virtual size_t write(const char* s) {
+        return write((uint8_t*)s, strlen(s));
+    }
+};
+
+class Stream : public Print {
+public:    
+    virtual int read() = 0;
+    virtual int available() = 0;
+};
+
+#else
 #include <Arduino.h>
+#endif
 
 #ifdef ESP8266
 # include <ESP8266WiFi.h>
@@ -101,7 +145,6 @@ private:
     int readPos = 0;
     int32_t curForeColor565 = -1;
     uint32_t lastMessageStart = 0;
-    uint16_t curTextColor565 = 0xFFFF;
     int pointerX;
     int pointerY;
     int curWidth = VECTOR_DISPLAY_DEFAULT_WIDTH;
@@ -208,6 +251,30 @@ public:
     virtual void remoteWrite(uint8_t c) = 0;
     virtual void remoteWrite(const void* data, size_t n) = 0;
     virtual size_t remoteAvailable() = 0;
+    
+    void attribute8(char a, uint8_t value) {
+        args.attribute8.attr = a;
+        args.attribute8.value = value;
+        sendCommand('Y', &args, 2);
+    }
+
+    void attribute8(char a, bool value) {
+        args.attribute8.attr = a;
+        args.attribute8.value = value ? 1 : 0;
+        sendCommand('Y', &args, 2);
+    }
+
+    void attribute16(char a, uint16_t value) {
+        args.attribute16.attr = a;
+        args.attribute16.value = value;
+        sendCommand('A', &args, 3);
+    }
+
+    void attribute32(char a, uint32_t value) {
+        args.attribute32.attr = a;
+        args.attribute32.value = value;
+        sendCommand('B', &args, 5);
+    }
 
     void sendCommand(char c, const void* arguments, int argumentsLength) {
         sendDelay();
@@ -302,7 +369,7 @@ public:
         sendCommand('R', &args, 8);
     }
     
-    void rectangle(int x1, int y1, int x2, int y2, boolean fill=false) {
+    void rectangle(int x1, int y1, int x2, int y2, bool fill=false) {
         if (fill)
             fillRectangle(x1,y1,x2,y2);
         else {
@@ -314,7 +381,7 @@ public:
         }
     }
     
-    void roundedRectangle(int x1, int y1, int x2, int y2, int r, boolean fill) {
+    void roundedRectangle(int x1, int y1, int x2, int y2, int r, bool fill) {
         args.roundedRectangle.filled = fill ? 1 : 0;
         args.roundedRectangle.x1 = x1;
         args.roundedRectangle.x2 = x2;
@@ -428,7 +495,7 @@ public:
         text(x,y,str.c_str(), str.length());
     }
     
-    void deleteButton(byte command) {
+    void deleteButton(uint8_t command) {
         sendCommand('D', &command, 1);
     }
 
@@ -478,6 +545,12 @@ public:
         sendCommand('B', &args, 5);
     }
     
+    void textForeColor(uint32_t color) {
+        args.attribute32.attr = 'F';
+        args.attribute32.value = color;
+        sendCommand('B', &args, 5);
+    }
+    
     void foreColor565(uint16_t color) {
         args.attribute16.attr = 'f';
         args.attribute16.value = color;
@@ -493,6 +566,12 @@ public:
 
     void textBackColor565(uint16_t color) {
         args.attribute16.attr = 'k';
+        args.attribute16.value = color;
+        sendCommand('A', &args, 3);
+    }
+    
+    void textForeColor565(uint16_t color) {
+        args.attribute16.attr = 'F';
         args.attribute16.value = color;
         sendCommand('A', &args, 3);
     }
@@ -742,7 +821,7 @@ public:
     }
 
     /* The following are meant to be compatible with Adafruit GFX */
-    void cp437(boolean s) {
+    void cp437(bool s) {
         // if true, activates real cp437 mode; if false, activates buggy Arduino compatible cp437 mode
         fixCP437 = !s;
         args.attribute8.attr = 'i';
@@ -763,30 +842,25 @@ public:
     }
     
     void setTextColor(uint16_t f, uint16_t b) {
-        curTextColor565 = f;
         textBackColor565(b);
+        textForeColor565(f);
         textOpaqueBackground(true);
     }
     
     void setTextColor(uint16_t f) {
-        curTextColor565 = f;
+        textForeColor565(f);
         textOpaqueBackground(false);
     }
     
-    void setCursor(int16_t x, int16_t y) {
-        curx = x;
-        cury = y;
+    void setCursor(int16_t x, int16_t y) { // TODO
     }
     
-    void setTextWrap(boolean w) {
+    void setTextWrap(bool w) {
         wrap = w;
     }
 
         // TODO: fix back color handling
-    virtual size_t write(uint8_t c) {
-        if (curTextColor565 != curForeColor565) {
-            foreColor565(curTextColor565);
-        }
+    size_t write(uint8_t c) override {
         if (wrap && curx + 5*gfxFontSize>width()) {
             curx = 0;
             cury += 8*gfxFontSize;
@@ -797,10 +871,7 @@ public:
     }
 
         // TODO: fix back color handling
-    virtual size_t write(const char* s) {
-        if (curTextColor565 != curForeColor565) {
-            foreColor565(curTextColor565);
-        }
+    size_t write(const char* s) override {
         int l = strlen(s);
         int w = width();
         if (!wrap || curx + 5*gfxFontSize*l <= w) {
