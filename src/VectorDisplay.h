@@ -139,6 +139,7 @@ private:
     static const uint8_t FLAG_PAD_BYTE = 4;
     static const uint8_t FLAG_LOW_ENDIAN_BYTES = 8;
 
+    bool waitForAck = true;
     int gfxFontSize = 1;
     int curx = 0;
     int cury = 0;
@@ -238,6 +239,10 @@ private:
     }
     
 public:    
+    void setWaitForAck(bool wait) {
+        waitForAck = wait;
+    }
+
     void setDelay(uint32_t delayMillis) {
         delayTime = delayMillis;
         lastSend = millis();
@@ -296,6 +301,9 @@ public:
             uint32_t t0 = millis();
             
             sendCommand(c, arguments, argumentsLength);
+
+            if (!waitForAck)
+                return;
             
             while ((millis()-t0) < 500) {
                 if (readMessage(NULL) && !memcmp(readBuf, "Acknwld", 7) && readBuf[7]==c) {
@@ -784,7 +792,7 @@ public:
         uint32_t bitmapSize = getBitmapSize(w,h,depth,flags);
         int headerSize = depth==1 ? 22 : 14;
         uint32_t maskSize = mask == NULL ? 0 : getBitmap1Size(w,h,flags);
-        uint32_t fullSize = bitmapSize + headerSize + maskSize;
+        uint32_t fullSize = bitmapSize + (headerSize-14) + maskSize;
         
         if (fullSize + 1 > MAX_BUFFER)
             return;
@@ -793,7 +801,7 @@ public:
         remoteWrite('K');
         remoteWrite('K'^0xFF);
         args.bitmap.length = fullSize;
-        args.bitmap.depth = 1;
+        args.bitmap.depth = depth;
         args.bitmap.flags = flags;
         args.bitmap.x = x;
         args.bitmap.y = y;
@@ -1001,7 +1009,6 @@ public:
         roundedRectangle(x0,y0,w,h,radius,true);          
     }
 
-    // bitmap functions not tested
     void drawBitmap(int16_t x, int16_t y, const uint8_t bmp[],
       int16_t w, int16_t h, uint16_t color) /* PROGMEM */ {
         bitmap_progmem(x,y,bmp,w,h,1,0,NULL,color565To8888(color),0); // transparent background
