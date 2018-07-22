@@ -879,7 +879,7 @@ public:
     }
 
         // TODO: fix back color handling
-    size_t write(const char* s) override {
+    size_t write(const char* s) /*override*/ { //ESP8266 core doesn't supply write(const char*)
         int l = strlen(s);
         int w = width();
         if (!wrap || curx + 5*gfxFontSize*l <= w) {
